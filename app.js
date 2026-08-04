@@ -68,6 +68,28 @@ const log = document.getElementById('log');
 const refreshBtn = document.getElementById('refresh-btn');
 const stopBtn = document.getElementById('stop-btn');
 const lastResponseEl = document.getElementById('last-response');
+const etatPrincipal = document.getElementById('etat-principal');
+const etatTexte = document.getElementById('etat-texte');
+const etatPoint = document.getElementById('etat-point');
+
+// Vocabulaire technique -> phrase calme affichée en gros. Le détail
+// technique (état exact, wake lock, micro…) reste dans <details>, replié
+// par défaut — utile en test, pas nécessaire en usage mains libres normal.
+const ETAT_FR = {
+  'écoute…': 'À l’écoute',
+  'traitement…': 'Je réfléchis…',
+  'réponse…': 'Je réponds…',
+  'en attente…': 'Prêt',
+  'arrêté': 'Session arrêtée',
+};
+
+function setEtat(text, kind) {
+  setStatus(statusVad, text, kind);
+  etatTexte.textContent = ETAT_FR[text] || text;
+  etatPoint.className = 'etat-point';
+  if (kind) etatPoint.classList.add(kind);
+  etatPoint.classList.toggle('pulse', text === 'écoute…');
+}
 
 energyThresholdMarker.style.left = `${ENERGY_THRESHOLD * 100}%`;
 
@@ -149,7 +171,7 @@ function endTtsSpeaking() {
     clearTimeout(ttsWatchdogId);
     ttsWatchdogId = null;
   }
-  setStatus(statusVad, 'en attente…', null);
+  setEtat('en attente…', null);
 }
 
 function estimateSpeechDurationMs(text) {
@@ -168,7 +190,7 @@ function speak(text) {
   utterance.lang = 'fr-FR';
   currentUtterance = utterance; // sans cette référence, WebKit peut GC l'objet et ne jamais émettre 'end'
   ttsSpeaking = true;
-  setStatus(statusVad, 'réponse…', null);
+  setEtat('réponse…', null);
   // 'end'/'error' servent de raccourci s'ils se déclenchent, mais le timer
   // estimé ci-dessous est ce qui referme réellement l'état dans la majorité
   // des cas — voir la note sur la fiabilité de 'end' plus haut.
@@ -253,7 +275,7 @@ async function stopSession() {
   pendingDisambiguation = null;
 
   setStatus(statusMic, 'arrêté', null);
-  setStatus(statusVad, 'arrêté', null);
+  setEtat('arrêté', null);
   energyFill.style.width = '0%';
   stopBtn.hidden = true;
   refreshBtn.hidden = true;
@@ -287,7 +309,7 @@ function beginUtterance() {
   utteranceStartedAt = performance.now();
   recordedChunks = [];
   mediaRecorder.start();
-  setStatus(statusVad, 'écoute…', 'ok');
+  setEtat('écoute…', 'ok');
 }
 
 function endUtterance() {
@@ -330,7 +352,7 @@ function resoudrePlante(result, valeurDeSecours) {
     : result.valeur ?? valeurDeSecours;
 
   if (typeof valeur !== 'number' || Number.isNaN(valeur)) {
-    speak(estWh51 ? templates.capteurIndisponible() : templates.nonReconnu());
+    speak(estWh51 ? `${plant.nom}. ${templates.capteurIndisponible()}` : templates.nonReconnu());
     return;
   }
 
@@ -342,8 +364,10 @@ function resoudrePlante(result, valeurDeSecours) {
     regime: plant.regime,
   });
   const response = buildResponse({ source: plant.source, valeur, verdict });
+  // Le nom est annoncé en premier : sans ça, en mains libres, aucun moyen de
+  // détecter que Gemini a identifié la mauvaise plante avant d'arroser.
   addLogEntry(plant.nom, response);
-  speak(response);
+  speak(`${plant.nom}. ${response}`);
 }
 
 // resolvingDisambiguation : cet énoncé répondait à "Salon, chambre, ou
@@ -388,7 +412,7 @@ async function onUtteranceComplete() {
   const durationMs = performance.now() - utteranceStartedAt - SILENCE_DURATION_MS;
 
   if (durationMs < MIN_UTTERANCE_MS) {
-    setStatus(statusVad, 'en attente…', null);
+    setEtat('en attente…', null);
     return;
   }
 
@@ -396,7 +420,7 @@ async function onUtteranceComplete() {
   const resolvingDisambiguation = pendingDisambiguation !== null;
   const candidateIds = resolvingDisambiguation ? pendingDisambiguation.candidateIds : null;
   processing = true;
-  setStatus(statusVad, 'traitement…', null);
+  setEtat('traitement…', null);
 
   try {
     const result = await comprendreUtterance(blob, mediaRecorder.mimeType, candidateIds);
@@ -448,6 +472,8 @@ stopBtn.addEventListener('click', () => {
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
   statusSection.hidden = false;
+  etatPrincipal.hidden = false;
+  setEtat('en attente…', null);
   pickFrenchVoice();
 
   await acquireWakeLock();

@@ -41,16 +41,16 @@ h1 {
 
 .subtitle {
   color: var(--ink-soft);
-  margin: 0 0 8px;
+  margin: 0 0 32px;
   font-size: 0.95rem;
 }
 
 .version {
   color: var(--ink-soft);
-  margin: 0 0 40px;
-  font-size: 0.75rem;
+  margin: 32px 0 0;
+  font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
-  opacity: 0.6;
+  opacity: 0.4;
 }
 
 #start-btn {
@@ -92,18 +92,69 @@ h1 {
   cursor: default;
 }
 
+.etat-principal {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 1rem;
+  color: var(--ink-soft);
+}
+
+.etat-point {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.etat-point.ok {
+  background: var(--accent);
+}
+
+.etat-point.error {
+  background: var(--danger);
+}
+
+.etat-point.pulse {
+  animation: etat-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes etat-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
 .last-response {
-  margin-top: 28px;
-  font-size: 1.1rem;
+  margin-top: 20px;
+  font-size: 1.15rem;
   font-weight: 500;
   line-height: 1.4;
 }
 
 .status {
-  margin-top: 40px;
+  margin-top: 32px;
   text-align: left;
   border-top: 1px solid var(--line);
-  padding-top: 20px;
+  padding-top: 16px;
+}
+
+.status summary {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-align: center;
+  list-style: none;
+}
+
+.status summary::-webkit-details-marker {
+  display: none;
+}
+
+.status[open] summary {
+  margin-bottom: 12px;
 }
 
 .refresh-btn {

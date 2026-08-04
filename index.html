@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f4f0">
-<meta name="app-version" content="2026-08-04.10">
+<meta name="app-version" content="2026-08-04.11">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Ondee">
@@ -12,20 +12,25 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <title>Ondee</title>
-<link rel="stylesheet" href="style.css?v=2026-08-04.10">
+<link rel="stylesheet" href="style.css?v=2026-08-04.11">
 </head>
 <body>
   <main>
     <h1>Ondee</h1>
     <p class="subtitle">Assistant vocal d'arrosage</p>
-    <p class="version" id="version-tag"></p>
 
     <button id="start-btn">Démarrer</button>
     <button class="stop-btn" id="stop-btn" hidden>Terminer la session</button>
 
+    <p class="etat-principal" id="etat-principal" hidden>
+      <span class="etat-point" id="etat-point"></span>
+      <span id="etat-texte">—</span>
+    </p>
+
     <p class="last-response" id="last-response" hidden></p>
 
-    <section class="status" id="status" hidden>
+    <details class="status" id="status" hidden>
+      <summary>Détails techniques</summary>
       <div class="status-row">
         <span class="status-label">Écran</span>
         <span class="status-value" id="status-wakelock">—</span>
@@ -43,11 +48,13 @@
         <div class="energy-threshold" id="energy-threshold-marker"></div>
       </div>
       <button class="refresh-btn" id="refresh-btn" hidden>rafraîchir les capteurs</button>
-    </section>
+    </details>
 
     <ul class="log" id="log" hidden></ul>
+
+    <p class="version" id="version-tag"></p>
   </main>
 
-  <script type="module" src="app.js?v=2026-08-04.10"></script>
+  <script type="module" src="app.js?v=2026-08-04.11"></script>
 </body>
 </html>
