@@ -300,6 +300,79 @@ synthèse vocale (pas de navigateur en CI), et la reconnaissance sur une vraie
 voix (pas d'enregistrement de référence). Ces deux-là ne se valident que sur
 l'appareil.
 
+## Phase 7 — après le premier test vocal réussi
+
+**Le son fonctionne.** Confirmé par l'utilisateur sur l'appareil. La correction
+la plus probable était la bonne : `cancel()` immédiatement suivi de `speak()`,
+seul écart avec la Phase 0 audible. Le témoin (bouton « Tester le son », ligne
+« Voix ») reste en place, il ne coûte rien et servira à la prochaine panne.
+
+Deux problèmes rapportés en revanche, tous deux réels.
+
+### Le micro mourait à la deuxième plante — bug introduit par le pré-armement
+
+Régression de ma propre correction précédente. `rearmBlocked` était un
+**verrou levé uniquement par un retour de l'énergie sous `ENERGY_PREARM_THRESHOLD`**
+(0.008). Téléphone en poche, en marchant, le frottement du tissu maintient le
+niveau au-dessus de ce seuil en permanence :
+
+1. Un bruit dépasse le seuil bas → armement.
+2. Aucune parole dans les 700 ms → armement jeté, `rearmBlocked = true`.
+3. Le niveau ne redescend jamais sous 0.008 → **le verrou ne se lève jamais**.
+4. Micro mort pour le reste de la session, sans rien afficher.
+
+En mains libres, c'est le pire mode de panne possible : on parle à une app
+morte sans le savoir.
+
+Corrections :
+
+- **Le réarmement attend un délai, plus un seuil** (`PREARM_COOLDOWN_MS`).
+  Un délai s'écoule toujours ; un seuil peut ne jamais revenir. Cette classe
+  de bug est éliminée, pas juste ce cas-ci.
+- `ENERGY_PREARM_THRESHOLD` relevé de 0.008 à **0.012**, au-dessus du bruit de
+  poche, pour ne pas s'armer sur du frottement en continu.
+- `discardingRecording` n'est plus armé que si `stop()` est réellement appelé.
+  Sinon le drapeau restait levé et avalait l'énoncé suivant, bien réel.
+
+### Filet de dernier recours : `unstickVad()`
+
+Ce bug a coûté une tournée entière parce que rien ne le signalait. Plutôt que
+de parier sur l'absence d'un autre drapeau coincé, la VAD se remet maintenant
+en marche de force si elle reste neutralisée par `ttsSpeaking`/`processing`
+plus de 20 s — bien au-delà de tout appel réseau plausible — avec une entrée
+au journal. Une session ne peut plus mourir en silence.
+
+Et une ligne **« Détecteur »** affiche en continu `arm0 rec0 proc0 tts0`.
+Tant qu'elle bouge, le thread audio vit ; si elle se fige, c'est
+l'`AudioContext` qui est mort et non la machine à états — deux pannes
+identiques à l'oreille, opposées à corriger.
+
+### Latence : la mesure existe enfin
+
+Les logs du smoke test donnent le chiffre qui manquait, sur un clip **d'une
+seconde de silence** (donc plancher absolu, un vrai énoncé ne fera pas mieux) :
+
+| Appel | Durée mesurée |
+|---|---|
+| `/comprendre` (run 12) | **6,3 s** |
+| `/comprendre` (run 15) | **4,6 s** |
+| `/comprendre?candidats=` (run 15) | **2,9 s** |
+| `/capteurs` (Ecowitt, pour comparaison) | 0,7 s |
+
+**L'appel Gemini est la latence.** Tout le reste est du bruit à côté. La cible
+du brief (< 3 s bout-en-bout, section 9) n'est pas atteignable avec cet appel :
+il consomme à lui seul le budget entier, et jusqu'à deux fois plus.
+
+Une seule part était récupérable côté client, et elle l'a été :
+`SILENCE_DURATION_MS` passe de 1200 à **800 ms**. C'est de la latence pure et
+garantie, ajoutée à chaque réponse avant même que la requête ne parte. Presque
+une demi-seconde par tour, sans rien changer au modèle.
+
+Le reste ne se corrige pas par réglage. Whisper turbo transcrit un clip de 3 s
+en 300–600 ms, et l'appariement déterministe est instantané — soit environ un
+ordre de grandeur sous ce qu'on mesure ici. **Ce qui était une hypothèse dans
+la recommandation ci-dessous est maintenant appuyé par des mesures.**
+
 ## Est-ce qu'on est sur la bonne voie ? — recommandation
 
 Question posée en ouverture de cette session. Réponse courte : **ce n'est pas

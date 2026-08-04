@@ -16,10 +16,22 @@ const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère
 // importance ; sur une réponse d'un seul mot — exactement le cas de la
 // désambiguïsation — il ne reste plus grand-chose à reconnaître. On arme donc
 // le magnétophone bien plus bas, et on décide seulement après coup si ce qui
-// a été capté était un vrai énoncé ou du bruit à jeter.
-const ENERGY_PREARM_THRESHOLD = 0.008;
+// a été capté était un vrai énoncé ou du bruit à jeter. Relevé de 0.008 à
+// 0.012 après test réel : il doit rester au-dessus du bruit de fond d'une
+// poche en marchant, sinon on s'arme sur du frottement de tissu en continu.
+const ENERGY_PREARM_THRESHOLD = 0.012;
 const PREARM_MAX_WAIT_MS = 700;     // sans franchissement du vrai seuil dans ce délai, c'était du bruit
-const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
+// Après un armement jeté, on attend un délai fixe avant de réarmer — jamais
+// un retour du niveau sous un seuil. La première version attendait ce retour
+// au calme, et en poche il ne venait jamais : le micro restait mort pour le
+// reste de la session. Un délai ne peut pas rester bloqué.
+const PREARM_COOLDOWN_MS = 400;
+// Ce délai est de la latence pure et garantie : il s'ajoute à CHAQUE réponse,
+// avant même que la requête ne parte. 1200 ms était généreux pour un brief qui
+// imaginait des phrases ; en pratique les énoncés sont courts ("Ficus lyrata,
+// six"). Descendu à 800 ms — presque une demi-seconde gagnée sur chaque tour,
+// la seule part de la latence qui ne dépende pas de Gemini.
+const SILENCE_DURATION_MS = 800;
 const MIN_UTTERANCE_MS = 200;       // ignore les pics trop courts (bruit, frottement) — assez bas pour ne pas avaler une réponse d'un mot ("bureau", "répète")
 const ENERGY_BLOCK_SAMPLES = 512;   // taille du bloc RMS calculé côté thread audio (plus petit = barre plus réactive)
 
@@ -77,6 +89,7 @@ const log = document.getElementById('log');
 const refreshBtn = document.getElementById('refresh-btn');
 const stopBtn = document.getElementById('stop-btn');
 const statusVoice = document.getElementById('status-voice');
+const statusFlags = document.getElementById('status-flags');
 const testVoiceBtn = document.getElementById('test-voice-btn');
 const lastResponseEl = document.getElementById('last-response');
 const etatPrincipal = document.getElementById('etat-principal');
@@ -115,8 +128,35 @@ let silenceStartedAt = null;
 let utteranceStartedAt = null;
 let armed = false;              // magnétophone démarré, énoncé pas encore confirmé
 let armedAt = null;
-let rearmBlocked = false;       // attend un retour sous le seuil bas avant de réarmer
+let rearmBlockedUntil = 0;      // instant avant lequel on ne réarme pas (délai, jamais un seuil)
 let discardingRecording = false; // ce 'stop' ferme du bruit, pas un énoncé
+let vadBlockedSince = null;     // depuis quand la VAD est neutralisée par ttsSpeaking/processing
+let vadStuckCheckId = null;
+
+// Filet de dernier recours. Le bug du réarmement bloqué a rendu le micro muet
+// pour toute une tournée sans rien afficher — en mains libres, téléphone en
+// poche, ça ne se voit pas : on parle à une app morte. Plutôt que de parier
+// sur l'absence d'un autre drapeau coincé, on remet la VAD en marche de force
+// si elle reste neutralisée bien au-delà du plausible.
+const VAD_STUCK_TIMEOUT_MS = 20000;
+
+function unstickVad() {
+  if (vadBlockedSince === null || performance.now() - vadBlockedSince < VAD_STUCK_TIMEOUT_MS) return;
+  addLogEntry('VAD débloquée', `coincée ${Math.round((performance.now() - vadBlockedSince) / 1000)} s`);
+  vadBlockedSince = null;
+  ttsGeneration++;
+  ttsSpeaking = false;
+  processing = false;
+  armed = false;
+  recording = false;
+  discardingRecording = false;
+  rearmBlockedUntil = 0;
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    discardingRecording = true;
+    mediaRecorder.stop();
+  }
+  setEtat('en attente…', null);
+}
 let ttsSpeaking = false;
 let ttsWatchdogId = null;
 let frenchVoice = null;
@@ -302,12 +342,18 @@ async function startMic() {
     if (e.data.size > 0) recordedChunks.push(e.data);
   });
   mediaRecorder.addEventListener('stop', onUtteranceComplete);
+
+  vadStuckCheckId = setInterval(unstickVad, 2000);
 }
 
 // Arrête tout ce que startMic()/acquireWakeLock() ont ouvert : le brief
 // prévoyait "terminer = fermer la page" (section 2), mais en usage réel il
 // faut un moyen de couper le micro sans recharger toute la session.
 async function stopSession() {
+  if (vadStuckCheckId !== null) {
+    clearInterval(vadStuckCheckId);
+    vadStuckCheckId = null;
+  }
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     mediaRecorder.removeEventListener('stop', onUtteranceComplete);
     mediaRecorder.stop();
@@ -343,8 +389,9 @@ async function stopSession() {
   processing = false;
   recording = false;
   armed = false;
-  rearmBlocked = false;
+  rearmBlockedUntil = 0;
   discardingRecording = false;
+  vadBlockedSince = null;
   pendingDisambiguation = null;
 
   setStatus(statusMic, 'arrêté', null);
@@ -358,8 +405,16 @@ async function stopSession() {
 
 function handleEnergyReading(rms) {
   energyFill.style.width = `${Math.min(rms / (ENERGY_THRESHOLD * 4), 1) * 100}%`;
+  // Affiché avant tout retour anticipé : tant que cette ligne bouge, le thread
+  // audio vit. Si elle se fige, c'est l'AudioContext qui est mort, pas la
+  // machine à états — deux pannes identiques à l'oreille, opposées à corriger.
+  statusFlags.textContent = `arm${armed ? 1 : 0} rec${recording ? 1 : 0} proc${processing ? 1 : 0} tts${ttsSpeaking ? 1 : 0}`;
 
-  if (ttsSpeaking || processing) return;
+  if (ttsSpeaking || processing) {
+    if (vadBlockedSince === null) vadBlockedSince = performance.now();
+    return;
+  }
+  vadBlockedSince = null;
 
   const aboveThreshold = rms > ENERGY_THRESHOLD;
   const abovePrearm = rms > ENERGY_PREARM_THRESHOLD;
@@ -375,14 +430,7 @@ function handleEnergyReading(rms) {
     return;
   }
 
-  // Le réarmement attend un vrai retour au calme : sans ça, un bruit de fond
-  // stable juste au-dessus du seuil bas ferait démarrer/arrêter le
-  // magnétophone en boucle pendant toute la tournée.
-  if (!abovePrearm) {
-    rearmBlocked = false;
-  }
-
-  if (!armed && abovePrearm && !rearmBlocked) {
+  if (!armed && abovePrearm && performance.now() >= rearmBlockedUntil) {
     armRecorder();
   } else if (armed && aboveThreshold) {
     confirmUtterance();
@@ -411,12 +459,16 @@ function confirmUtterance() {
 }
 
 // Bruit : on ferme sans rien envoyer. Le 'stop' déclenche quand même
-// onUtteranceComplete, d'où le drapeau qu'il y consulte.
+// onUtteranceComplete, d'où le drapeau qu'il y consulte — mais seulement si
+// on appelle vraiment stop(), sinon le drapeau resterait armé et avalerait
+// l'énoncé suivant, celui-là bien réel.
 function discardArmedRecording() {
   armed = false;
-  rearmBlocked = true;
-  discardingRecording = true;
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  rearmBlockedUntil = performance.now() + PREARM_COOLDOWN_MS;
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    discardingRecording = true;
+    mediaRecorder.stop();
+  }
 }
 
 function endUtterance() {
