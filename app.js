@@ -11,7 +11,7 @@ const SHARED_TOKEN = 'c31c2a2a9f543b6c260853699730e8589e5d8c0bf677096b';
 // --- Constantes VAD (à calibrer sur l'appareil réel — voir section 9.2 du brief) ---
 const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère qu'un énoncé commence
 const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
-const MIN_UTTERANCE_MS = 300;       // ignore les pics trop courts (bruit, frottement)
+const MIN_UTTERANCE_MS = 200;       // ignore les pics trop courts (bruit, frottement) — assez bas pour ne pas avaler une réponse d'un mot ("bureau", "répète")
 const ENERGY_BLOCK_SAMPLES = 512;   // taille du bloc RMS calculé côté thread audio (plus petit = barre plus réactive)
 
 // L'événement 'end' de speechSynthesis ne se déclenche pas de façon fiable
@@ -86,6 +86,11 @@ let processing = false; // true pendant l'appel au Worker, pour ne pas démarrer
 let lastSpokenText = null; // pour la commande "répète" (rejouée sans appel API, section 5.2)
 let plants = [];
 let sensorReadings = {}; // capteur_id -> valeur, chargé une fois au démarrage (section 6)
+
+// Tour de désambiguïsation en attente : { candidateIds, valeur } le temps
+// d'un seul énoncé de réponse ("bureau", "le lyre"...), puis réinitialisé
+// que ça résolve ou non — pas de relance en boucle.
+let pendingDisambiguation = null;
 
 function findPlant(id) {
   return plants.find((p) => p.id === id);
@@ -241,8 +246,12 @@ function endUtterance() {
   mediaRecorder.stop();
 }
 
-async function comprendreUtterance(blob, mimeType) {
-  const response = await fetch(`${WORKER_URL}/comprendre`, {
+async function comprendreUtterance(blob, mimeType, candidateIds) {
+  const url = new URL(`${WORKER_URL}/comprendre`);
+  if (candidateIds) {
+    url.searchParams.set('candidats', candidateIds.join(','));
+  }
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${SHARED_TOKEN}`,
@@ -256,22 +265,7 @@ async function comprendreUtterance(blob, mimeType) {
   return response.json();
 }
 
-function handleResult(result) {
-  if (result.commande === 'repete') {
-    speak(lastSpokenText || templates.nonReconnu());
-    return;
-  }
-
-  if (result.plante_id == null) {
-    if (Array.isArray(result.ambigus) && result.ambigus.length > 0) {
-      const pieces = [...new Set(result.ambigus.map((id) => findPlant(id)?.piece).filter(Boolean))];
-      speak(pieces.length > 0 ? templates.ambiguite(pieces) : templates.nonReconnu());
-    } else {
-      speak(templates.nonReconnu());
-    }
-    return;
-  }
-
+function resoudrePlante(result, valeurDeSecours) {
   const plant = findPlant(result.plante_id);
   if (!plant) {
     speak(templates.nonReconnu());
@@ -282,8 +276,8 @@ function handleResult(result) {
   // chargée au démarrage, pas de l'énoncé — l'utilisateur ne dit qu'un nom.
   const estWh51 = plant.source === 'wh51';
   const valeur = estWh51 && plant.capteur_id
-    ? sensorReadings[plant.capteur_id] ?? result.valeur
-    : result.valeur;
+    ? sensorReadings[plant.capteur_id] ?? result.valeur ?? valeurDeSecours
+    : result.valeur ?? valeurDeSecours;
 
   if (typeof valeur !== 'number' || Number.isNaN(valeur)) {
     speak(estWh51 ? templates.capteurIndisponible() : templates.nonReconnu());
@@ -302,6 +296,36 @@ function handleResult(result) {
   speak(response);
 }
 
+// resolvingDisambiguation : cet énoncé répondait à "Salon, chambre, ou
+// bureau ?" — le tour de désambiguïsation se termine ici quoi qu'il arrive
+// (résolu ou pas), pas de relance automatique en boucle.
+function handleResult(result, resolvingDisambiguation) {
+  if (result.commande === 'repete') {
+    speak(lastSpokenText || templates.nonReconnu());
+    return; // garde pendingDisambiguation intact : "répète" ne consomme pas le tour
+  }
+
+  const valeurDeSecours = resolvingDisambiguation ? pendingDisambiguation.valeur : undefined;
+  if (resolvingDisambiguation) {
+    pendingDisambiguation = null;
+  }
+
+  if (result.plante_id == null) {
+    if (!resolvingDisambiguation && Array.isArray(result.ambigus) && result.ambigus.length > 0) {
+      const pieces = [...new Set(result.ambigus.map((id) => findPlant(id)?.piece).filter(Boolean))];
+      if (pieces.length > 0) {
+        pendingDisambiguation = { candidateIds: result.ambigus, valeur: result.valeur };
+        speak(templates.ambiguite(pieces));
+        return;
+      }
+    }
+    speak(templates.nonReconnu());
+    return;
+  }
+
+  resoudrePlante(result, valeurDeSecours);
+}
+
 async function onUtteranceComplete() {
   const durationMs = performance.now() - utteranceStartedAt - SILENCE_DURATION_MS;
 
@@ -311,12 +335,14 @@ async function onUtteranceComplete() {
   }
 
   const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+  const resolvingDisambiguation = pendingDisambiguation !== null;
+  const candidateIds = resolvingDisambiguation ? pendingDisambiguation.candidateIds : null;
   processing = true;
   setStatus(statusVad, 'traitement…', null);
 
   try {
-    const result = await comprendreUtterance(blob, mediaRecorder.mimeType);
-    handleResult(result);
+    const result = await comprendreUtterance(blob, mediaRecorder.mimeType, candidateIds);
+    handleResult(result, resolvingDisambiguation);
   } catch (err) {
     addLogEntry('Erreur', err.message);
     speak(templates.nonReconnu());

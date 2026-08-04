@@ -20,10 +20,28 @@ function jsonResponse(body, env, status = 200) {
   });
 }
 
-function buildSystemPrompt(plants) {
+function buildSystemPrompt(plants, candidateIds) {
   const liste = plants
     .map((p) => `- id ${p.id} : ${p.nom} (${p.piece}) — ${p.description} [${p.source}]`)
     .join('\n');
+
+  if (candidateIds) {
+    // Tour de désambiguïsation : l'énoncé précédent avait identifié plusieurs
+    // candidats (ex. "Ficus" correspond à 3 plantes) et l'app a demandé de
+    // préciser. Cet énoncé-ci est la réponse — courte, souvent un seul mot
+    // (nom de pièce, détail visuel) — à faire correspondre à l'un d'eux.
+    return `Tu identifies laquelle de ces plantes l'utilisateur désigne, en réponse à une question de désambiguïsation qu'on vient de lui poser (ex. "Salon, chambre, ou bureau ?"). Sa réponse est courte, parfois un seul mot.
+
+Candidats :
+${liste}
+
+Règles de sortie, JSON strict uniquement, sans texte autour :
+- Commande "répète" : {"commande": "repete"}
+- Un des candidats correspond clairement à la réponse (pièce, détail) : {"plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "confiance": "haute"|"moyenne"}
+- Toujours ambigu, ou aucun candidat ne correspond à la réponse : {"plante_id": null}
+
+Ne choisis jamais un candidat au hasard si la réponse ne permet pas de trancher.`;
+  }
 
   return `Tu identifies une plante d'intérieur et extrais une lecture d'humidité à partir d'un énoncé vocal en français, prononcé par une seule personne faisant sa tournée d'arrosage.
 
@@ -34,11 +52,16 @@ Note sur [wh51] vs [sonde] : les plantes [wh51] ont un capteur automatique —
 l'utilisateur ne dit que le nom de la plante, sans chiffre, et c'est normal.
 Les plantes [sonde] nécessitent une valeur dictée pour être un identification complète.
 
+Attention aux noms génériques partagés par plusieurs plantes de la liste
+(ex. "Ficus" correspond à 3 plantes différentes, "Calathea" à 2, "Pothos" à
+4, "Sansevieria" à 2) : si l'énoncé ne précise pas assez pour distinguer
+laquelle, c'est une ambiguïté à signaler, pas un match à deviner.
+
 Règles de sortie, JSON strict uniquement, sans texte autour :
 - Commande "répète" (ou équivalent proche, ex. "répète ça") : {"commande": "repete"}
-- Plante [sonde] identifiée clairement (nom, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "confiance": "haute"|"moyenne"}
-- Plante [wh51] identifiée clairement, avec ou sans valeur énoncée : {"plante_id": <id>, "confiance": "haute"|"moyenne"} (ajoute "valeur" seulement si un chiffre a été dit)
-- Plusieurs plantes correspondent également (ambiguïté réelle, pas un cas limite) : {"plante_id": null, "ambigus": [<id>, <id>, ...]}
+- Plante [sonde] identifiée sans ambiguïté (nom précis, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "confiance": "haute"|"moyenne"}
+- Plante [wh51] identifiée sans ambiguïté, avec ou sans valeur énoncée : {"plante_id": <id>, "confiance": "haute"|"moyenne"} (ajoute "valeur" seulement si un chiffre a été dit)
+- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé}
 - Aucune plante ne correspond, ou une plante [sonde] est nommée sans valeur : {"plante_id": null}
 
 Ne devine jamais une plante en cas de doute : préfère l'ambiguïté ou le non-reconnu à une identification incertaine.`;
@@ -54,12 +77,15 @@ function base64FromArrayBuffer(buffer) {
   return btoa(binary);
 }
 
-async function handleComprendre(request, env) {
+async function handleComprendre(request, env, candidateIds) {
   const plantsResponse = await fetch(env.PLANTS_URL);
   if (!plantsResponse.ok) {
     return jsonResponse({ plante_id: null }, env, 502);
   }
-  const plants = await plantsResponse.json();
+  let plants = await plantsResponse.json();
+  if (candidateIds) {
+    plants = plants.filter((p) => candidateIds.includes(p.id));
+  }
 
   const mimeType = request.headers.get('Content-Type') || 'audio/webm';
   const audioBuffer = await request.arrayBuffer();
@@ -71,7 +97,7 @@ async function handleComprendre(request, env) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: buildSystemPrompt(plants) }] },
+      systemInstruction: { parts: [{ text: buildSystemPrompt(plants, candidateIds) }] },
       contents: [{ parts: [{ inlineData: { mimeType, data: base64Audio } }] }],
       generationConfig: { responseMimeType: 'application/json' },
     }),
@@ -143,7 +169,11 @@ export default {
 
     try {
       if (request.method === 'POST' && url.pathname === '/comprendre') {
-        return await handleComprendre(request, env);
+        const candidatsParam = url.searchParams.get('candidats');
+        const candidateIds = candidatsParam
+          ? candidatsParam.split(',').map(Number).filter((n) => !Number.isNaN(n))
+          : null;
+        return await handleComprendre(request, env, candidateIds);
       }
       if (request.method === 'GET' && url.pathname === '/capteurs') {
         return await handleCapteurs(env);
