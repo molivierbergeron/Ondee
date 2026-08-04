@@ -2,7 +2,39 @@
 const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère qu'un énoncé commence
 const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
 const MIN_UTTERANCE_MS = 300;       // ignore les pics trop courts (bruit, frottement)
-const FFT_SIZE = 2048;
+const ENERGY_BLOCK_SAMPLES = 1024;  // taille du bloc RMS calculé côté thread audio
+const TTS_WATCHDOG_MS = 8000;       // filet de sécurité si 'end' ne se déclenche pas (iOS, app en arrière-plan)
+
+// Le calcul d'énergie tourne dans un AudioWorklet (thread audio), pas dans
+// requestAnimationFrame : rAF s'arrête complètement dès que la page n'est
+// plus au premier plan (écran verrouillé, app changée), ce qui gelait toute
+// la boucle de décision VAD. Le thread audio, lui, continue.
+const VAD_WORKLET_SOURCE = `
+class VadProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.sumSquares = 0;
+    this.count = 0;
+    this.blockTarget = ${ENERGY_BLOCK_SAMPLES};
+  }
+  process(inputs) {
+    const channel = inputs[0][0];
+    if (channel) {
+      for (let i = 0; i < channel.length; i++) {
+        this.sumSquares += channel[i] * channel[i];
+        this.count++;
+      }
+      if (this.count >= this.blockTarget) {
+        this.port.postMessage(Math.sqrt(this.sumSquares / this.count));
+        this.sumSquares = 0;
+        this.count = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('vad-processor', VadProcessor);
+`;
 
 const startBtn = document.getElementById('start-btn');
 const statusSection = document.getElementById('status');
@@ -17,14 +49,14 @@ energyThresholdMarker.style.left = `${ENERGY_THRESHOLD * 100}%`;
 
 let wakeLock = null;
 let audioCtx = null;
-let analyser = null;
+let vadNode = null;
 let mediaRecorder = null;
 let recordedChunks = [];
-let rafId = null;
 let recording = false;
 let silenceStartedAt = null;
 let utteranceStartedAt = null;
 let ttsSpeaking = false;
+let ttsWatchdogId = null;
 let frenchVoice = null;
 
 function setStatus(el, text, kind) {
@@ -71,18 +103,26 @@ function pickFrenchVoice() {
 }
 speechSynthesis.addEventListener('voiceschanged', pickFrenchVoice);
 
+function endTtsSpeaking() {
+  ttsSpeaking = false;
+  if (ttsWatchdogId !== null) {
+    clearTimeout(ttsWatchdogId);
+    ttsWatchdogId = null;
+  }
+  setStatus(statusVad, 'en attente…', null);
+}
+
 function speakTest(text) {
   const utterance = new SpeechSynthesisUtterance(text);
   if (frenchVoice) utterance.voice = frenchVoice;
   utterance.lang = 'fr-FR';
   ttsSpeaking = true;
   setStatus(statusVad, 'réponse…', null);
-  utterance.addEventListener('end', () => {
-    ttsSpeaking = false;
-  });
-  utterance.addEventListener('error', () => {
-    ttsSpeaking = false;
-  });
+  utterance.addEventListener('end', endTtsSpeaking);
+  utterance.addEventListener('error', endTtsSpeaking);
+  // Filet de sécurité : sur iOS, l'événement 'end' peut ne jamais se
+  // déclencher si la synthèse a été interrompue en arrière-plan.
+  ttsWatchdogId = setTimeout(endTtsSpeaking, TTS_WATCHDOG_MS);
   speechSynthesis.speak(utterance);
 }
 
@@ -92,51 +132,53 @@ async function startMic() {
   setStatus(statusMic, 'actif', 'ok');
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+
+  const workletBlob = new Blob([VAD_WORKLET_SOURCE], { type: 'application/javascript' });
+  const workletUrl = URL.createObjectURL(workletBlob);
+  await audioCtx.audioWorklet.addModule(workletUrl);
+  URL.revokeObjectURL(workletUrl);
+
   const source = audioCtx.createMediaStreamSource(stream);
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = FFT_SIZE;
-  source.connect(analyser);
+  vadNode = new AudioWorkletNode(audioCtx, 'vad-processor');
+  source.connect(vadNode);
+
+  // Certains moteurs (Safari) ne maintiennent le traitement du worklet que
+  // si son graphe rejoint la destination ; on le fait à volume nul.
+  const silentGain = audioCtx.createGain();
+  silentGain.gain.value = 0;
+  vadNode.connect(silentGain);
+  silentGain.connect(audioCtx.destination);
+
+  vadNode.port.onmessage = (event) => handleEnergyReading(event.data);
 
   mediaRecorder = new MediaRecorder(stream);
   mediaRecorder.addEventListener('dataavailable', (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
   });
   mediaRecorder.addEventListener('stop', onUtteranceComplete);
+}
 
-  const buffer = new Uint8Array(analyser.fftSize);
+function handleEnergyReading(rms) {
+  energyFill.style.width = `${Math.min(rms / (ENERGY_THRESHOLD * 4), 1) * 100}%`;
 
-  function tick() {
-    analyser.getByteTimeDomainData(buffer);
+  if (ttsSpeaking) return;
 
-    let sumSquares = 0;
-    for (let i = 0; i < buffer.length; i++) {
-      const normalized = (buffer[i] - 128) / 128;
-      sumSquares += normalized * normalized;
+  const aboveThreshold = rms > ENERGY_THRESHOLD;
+
+  if (!recording && aboveThreshold) {
+    beginUtterance();
+  } else if (recording) {
+    if (aboveThreshold) {
+      silenceStartedAt = null;
+    } else if (silenceStartedAt === null) {
+      silenceStartedAt = performance.now();
+    } else if (performance.now() - silenceStartedAt >= SILENCE_DURATION_MS) {
+      endUtterance();
     }
-    const rms = Math.sqrt(sumSquares / buffer.length);
-
-    energyFill.style.width = `${Math.min(rms / (ENERGY_THRESHOLD * 4), 1) * 100}%`;
-
-    if (!ttsSpeaking) {
-      const aboveThreshold = rms > ENERGY_THRESHOLD;
-
-      if (!recording && aboveThreshold) {
-        beginUtterance();
-      } else if (recording) {
-        if (aboveThreshold) {
-          silenceStartedAt = null;
-        } else if (silenceStartedAt === null) {
-          silenceStartedAt = performance.now();
-        } else if (performance.now() - silenceStartedAt >= SILENCE_DURATION_MS) {
-          endUtterance();
-        }
-      }
-    }
-
-    rafId = requestAnimationFrame(tick);
   }
-
-  rafId = requestAnimationFrame(tick);
 }
 
 function beginUtterance() {
