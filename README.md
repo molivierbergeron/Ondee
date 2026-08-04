@@ -57,10 +57,11 @@ Le versioning affiché à l'écran (`v-tag` + `?v=` sur les fichiers) sert à co
 
 Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol cible » (pas « Arroser si ≤ », qui est un second seuil propre à la pratique manuelle de l'utilisateur — la grille du brief a déjà sa propre zone tampon de 5 points intégrée, donc les deux ne doivent pas se cumuler). `source` = 📱→`wh51`, ✋→`sonde`, directement depuis la table « usage quotidien ».
 
-**Décisions restant à confirmer :**
+**`capteur_id` confirmé** en croisant les canaux réels de la passerelle Ecowitt (Phase 4) avec la liste des capteurs donnée par l'utilisateur : `soil_ch1`→Calathea White Star, `soil_ch2`→Croton, `soil_ch3`→Ficus pleureur (*benjamina*), `soil_ch4`→Ficus lyre (*lyrata*), `soil_ch5`→Pothos hawaïen, `soil_ch6`→Monstera. `soil_ch7` est les cèdres extérieurs, hors sujet, non assigné.
 
-- `capteur_id` est `null` pour les 7 plantes en `wh51` (Pothos hawaïen, Monstera, Ficus pleureur, Ficus lyre, Croton, Plante-araignée, Calathea White Star). La page Notion liste des assignations (« WH51 #1 », « WH51L »…) mais elles ne concordent pas toujours avec la table d'usage quotidien (ex. Calathea lignes roses apparaît en ✋ dans un tableau et en WH51 #2 dans l'autre) — plutôt que deviner le canal `soil_ch1`–`soil_ch8` réel, à confirmer directement dans l'app Ecowitt en Phase 4.
-- `taille_pot` dérivé du diamètre de pot en pouces avec un seuil que j'ai choisi moi-même (petit ≤ 5", moyen 6–9", grand ≥ 10"), faute de seuil donné dans le brief. Ajustable si les doses ne semblent pas justes à l'usage.
+**Correction importante :** Plante-araignée était marquée `wh51` en Phase 1 (c'est ce que disait la table Notion), mais elle n'apparaît dans aucun des 7 canaux réels — son capteur fait partie d'un « 2e vague » de capteurs optionnelle mentionnée dans Notion, jamais installée en pratique. Repassée en `source: sonde` (dictée), sinon elle serait restée bloquée sur « pas de lecture capteur » indéfiniment.
+
+**Décision restant à confirmer :** `taille_pot` dérivé du diamètre de pot en pouces avec un seuil que j'ai choisi moi-même (petit ≤ 5", moyen 6–9", grand ≥ 10"), faute de seuil donné dans le brief. Ajustable si les doses ne semblent pas justes à l'usage.
 
 **`regime` mis à jour d'après description directe de l'utilisateur :** `complet` pour les 16 plantes en double pot (pot en plastique avec trous, posé dans un pot décoratif plus grand — parfois au contact du fond, parfois avec un jeu d'environ 0,5 cm), `mesure` pour les 4 sans ce montage (ZZ, Monstera, Dracaena, Plante-araignée). Point de vigilance non tranché par manque de précision par-plante : sur les pots qui touchent le fond sans jeu, l'eau de ruissellement n'a nulle part où aller — un risque réel pour les succulentes du lot (Sansevieria ×2, Aloe vera, Haworthia, Jade, Gasteria), plus sensibles à la pourriture des racines que les Pothos/Ficus/Calathea/Croton/Hypoestes du même groupe. Si un de ces pots-succulentes est de type « au contact », vaut la peine d'ajouter un petit espaceur (pied de pot, coupelle inversée) plutôt que de compter sur le ruissellement.
 
@@ -88,11 +89,11 @@ Endpoint `GET /capteurs` ajouté au même Worker (section 6 du brief) : appelle 
 
 Pour une plante `wh51` dont le `capteur_id` est renseigné, la lecture vient de ce cache plutôt que d'un chiffre dicté — l'utilisateur n'a qu'à nommer la plante. Le prompt système envoyé à Gemini distingue déjà les deux cas (voir `buildSystemPrompt` dans `worker/index.js`).
 
-**Ne fonctionnera pour aucune des 7 plantes wh51 tant que leurs `capteur_id` restent à `null`** (voir Phase 1) — en attendant, elles retombent sur `capteurIndisponible()` si aucun chiffre n'est dicté non plus.
+**`capteur_id` maintenant renseigné pour les 6 plantes réellement équipées** (voir Phase 1) — Pothos hawaïen, Monstera, Ficus pleureur, Ficus lyre, Croton, Calathea White Star. Prêt à être testé en conditions réelles.
 
 ### Forme de réponse Ecowitt — confirmée
 
-La forme supposée (`data.data.soil_chN.soilmoisture.value`) était la bonne : validée par un vrai appel post-déploiement, 7 canaux actifs (`soil_ch1`–`soil_ch7`) ont renvoyé des lectures réelles (57, 50, 41, 42, 29, 28, 51 — un canal `soil_ch8` inutilisé). Ça correspond au compte de 7 plantes `wh51` dans `plants.json`, bon signe que les 7 capteurs sont bien posés. Reste uniquement à faire correspondre chaque canal à sa plante (les lectures seules ne suffisent pas à deviner ça de façon fiable — plusieurs plages cibles se chevauchent) : le plus simple est de vérifier dans l'app Ecowitt quel capteur porte quel nom/emplacement.
+La forme supposée (`data.data.soil_chN.soilmoisture.value`) était la bonne : validée par un vrai appel post-déploiement, 7 canaux actifs (`soil_ch1`–`soil_ch7`) ont renvoyé des lectures réelles (57, 50, 41, 42, 29, 28, 51). `soil_ch7` correspond aux cèdres extérieurs (hors sujet, pas dans `plants.json`) ; les 6 autres sont maintenant assignés à leur plante.
 
 ## Phase 5 — Finition
 
