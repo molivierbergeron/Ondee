@@ -2,7 +2,7 @@
 
 Page web unique, mains libres, pour faire la tournée d'arrosage sans toucher le téléphone. Voir le brief complet pour l'architecture et les phases.
 
-## Phase 0 — Test de faisabilité (en cours)
+## Phase 0 — Test de faisabilité
 
 Cette phase ne fait qu'une chose : vérifier que le trio **Wake Lock + micro en poche + détection d'énoncé (VAD)** tient 15 minutes sur iPhone avec AirPods, avant de construire quoi que ce soit d'autre.
 
@@ -42,6 +42,28 @@ La barre d'énergie affichée à l'écran (avant de mettre le téléphone en poc
 
 Si un de ces points échoue (micro coupé, wake lock instable), arrêter et documenter précisément ce qui a échoué — le plan de repli (app native + re-signature) sera arbitré séparément.
 
+### Pièges iOS rencontrés en test réel
+
+Deux comportements Safari non documentés dans le brief, découverts et corrigés pendant les tests sur appareil :
+
+- `requestAnimationFrame` s'arrête complètement quand la page quitte le premier plan (écran verrouillé, app changée) — la boucle VAD tourne maintenant dans un `AudioWorkletNode` (thread audio), qui continue en arrière-plan.
+- L'événement `end` de `speechSynthesis` ne se déclenche pas de façon fiable tant qu'un micro est actif en parallèle — la fenêtre « réponse » est maintenant dimensionnée par une estimation de la durée de parole (longueur du texte), pas par cet événement.
+
+Le versioning affiché à l'écran (`v-tag` + `?v=` sur les fichiers) sert à confirmer sur l'appareil qu'on teste bien le dernier build et pas une copie mise en cache par Safari.
+
+## Phase 2 — Logique déterministe
+
+`logic.js` (normalisation, grille verdict/dose de la section 4.2) et `templates.js` (gabarits vocaux de la section 4.3), tous deux non liés à l'interface pour l'instant — le câblage arrive en Phase 3, une fois le LLM capable de fournir `{plante_id, valeur}`.
+
+Tests unitaires sur toute la grille (limites d'écart, dose par taille de pot, régime complet, garde-fou de normalisation) :
+
+```
+npm test
+```
+
 ## Phases suivantes
 
-Voir le brief pour le détail : structuration des données (`plants.json`), logique de verdict déterministe, intégration LLM via proxy Cloudflare Worker, lecture des capteurs Ecowitt, finition PWA.
+- **Phase 1 — Données** : bloquée en attente du tableau de plantes de l'utilisateur (voir section 3 du brief). Rien à structurer sans ces données.
+- **Phase 3 — LLM + proxy** : nécessite la création du Worker Cloudflare et une clé API Gemini, à fournir par l'utilisateur.
+- **Phase 4 — Ecowitt** : nécessite les clés API Ecowitt (`application_key`, `api_key`, `mac`), à fournir par l'utilisateur.
+- **Phase 5 — Finition** : UI, PWA, README final.
