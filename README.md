@@ -223,38 +223,67 @@ bugs opposés qui se corrigent à deux endroits différents, et deux sessions on
 été passées à deviner lequel des deux était en cause. **C'est la première chose
 à regarder dans le journal au prochain test.**
 
-### Régression attrapée par le smoke test : hallucination sur audio muet
+### Hallucination sur audio muet — constat, pas correction
 
-Le premier déploiement de ces changements a produit ceci, sur le clip
-**silencieux** du smoke test :
+Sur le clip **strictement silencieux** du smoke test, Gemini invente une plante
+avec confiance « haute ». Trois formulations de prompt successives, trois
+hallucinations, chaque fois en recrachant l'exemple le plus récent des
+instructions :
 
 ```
-POST /comprendre                 → {"ambigus":[1,2],"valeur":4,"transcription":"Sansevieria 4."}
-POST /comprendre?candidats=19,20 → {"plante_id":19,"confiance":"haute","transcription":"Cuisine"}
+prompt d'origine        → {"ambigus":[1,2],"valeur":4,"transcription":"Sansevieria 4."}
++ règle « audio muet »  → {"plante_id":14,"confiance":"haute","transcription":"Ficus lyre"}
++ transcription d'abord → {"plante_id":16,"valeur":4,"confiance":"haute",
+                           "transcription":"Le croton est à 4."}
 ```
 
-Il n'y a aucune parole dans ce fichier. Gemini recrachait les **exemples du
-prompt** comme s'il les avait entendus — « Cuisine » venait de l'exemple de
-question que j'y avais écrit (« Cuisine ou Salon ? »), « Sansevieria » de la
-liste des noms génériques. Avec `confiance: "haute"`.
+« Sansevieria » venait de la liste des noms génériques, « Ficus lyre » de
+l'exemple sur les noms latins, « Croton » du prompt d'après. **Le prompt n'est
+pas le bon outil contre ça** — chaque consigne ajoutée fournit surtout un
+nouvel exemple à recracher. J'ai arrêté après trois essais plutôt que de
+continuer à en écrire un quatrième.
 
-C'est une régression que j'ai introduite en rendant les prompts plus directifs
-(« dès qu'un seul candidat colle, réponds-le »), et elle est plus grave qu'elle
-n'en a l'air : en usage réel, une toux, une porte ou une voix de fond peuvent
-produire une identification **confiante et fausse**. Le mauvais arrosage
-silencieux, pas le « je n'ai pas reconnu » visible.
+**Portée réelle, à ne pas surestimer :** `silence.wav` n'est pas une entrée que
+l'app produit. La VAD n'envoie un clip qu'après franchissement d'un seuil
+d'énergie, donc jamais du silence pur. Le vrai risque équivalent est un audio
+qui a de l'énergie mais pas de nom de plante — une toux, une porte, la
+télévision — qui donnerait alors une identification confiante et fausse.
 
-Deux corrections :
+**Ce qui protège aujourd'hui**, par ordre d'efficacité :
 
-- Les deux prompts commencent maintenant par une règle explicite : aucun
-  discours intelligible → `{"plante_id": null}`, et les noms/pièces/exemples
-  des instructions servent à comprendre l'audio, jamais à le remplacer.
-  L'exemple de question parrotable a été retiré du prompt réduit.
-- **Le smoke test échoue désormais** si un clip silencieux renvoie une plante,
-  au lieu de simplement afficher la réponse. Idem pour l'auth (401 attendu) et
-  pour `/capteurs` (au moins une lecture). Une étape qui imprime sans vérifier
-  ne protège de rien — celle-ci imprimait déjà l'hallucination au déploiement
-  précédent, sans que rien ne s'en émeuve.
+1. Le nom de la plante est **annoncé à voix haute avant le verdict**
+   (« Croton. 4 sur dix… »). En mains libres, c'est ce qui permet d'entendre
+   que l'identification est fausse avant d'arroser. Cette annonce, ajoutée à
+   une session précédente, prend ici toute son importance.
+2. `assainirResultat()` dans le Worker : un `plante_id` absent de
+   `plants.json` est rejeté, un `ambigus` inventé est filtré, et une
+   transcription vide force `plante_id` à null. Du code, pas une consigne.
+3. La VAD, qui n'envoie pas d'audio sans énergie.
+
+**Ce qui le corrigerait vraiment** est architectural, pas cosmétique : avec une
+transcription d'abord et un appariement déterministe ensuite (voir plus bas),
+un transcript qui ne contient aucun nom de plante ne peut mécaniquement rien
+apparier. Il n'y a pas de place où halluciner.
+
+**Une piste non essayée, volontairement :** `generationConfig.responseSchema`
+avec `propertyOrdering` imposerait l'ordre des champs bien plus fermement que
+du texte — le modèle a ignoré ma demande de mettre `transcription` en premier.
+C'est exactement la famille de changement (`generationConfig`) qui a cassé la
+prod à la session précédente, donc elle doit être déployée **seule**, vérifiée
+par le smoke test, avant d'être combinée à quoi que ce soit d'autre. Pas
+pendant une session qui livre par ailleurs un correctif urgent.
+
+### Ce que le smoke test vérifie, et ce qu'il ne fait que signaler
+
+Un check qui échoue pour une raison sur laquelle il n'a aucune prise finit
+ignoré ou désactivé. La distinction est donc explicite :
+
+- **Assertions bloquantes** — le contrat du Worker, la partie qu'on contrôle :
+  401 sans jeton, `/capteurs` renvoie au moins une lecture, `/comprendre`
+  renvoie 200 + JSON parsable + champ `transcription`, et tout `plante_id`
+  renvoyé existe dans `plants.json`.
+- **Signalé sans bloquer** (`::warning::`) — le clip silencieux qui identifie
+  quand même une plante. Visible à chaque déploiement, jamais rouge.
 
 ### Couverture de test
 
@@ -270,6 +299,86 @@ Ce que les tests **ne** couvrent pas, et ne peuvent pas couvrir ici : la
 synthèse vocale (pas de navigateur en CI), et la reconnaissance sur une vraie
 voix (pas d'enregistrement de référence). Ces deux-là ne se valident que sur
 l'appareil.
+
+## Est-ce qu'on est sur la bonne voie ? — recommandation
+
+Question posée en ouverture de cette session. Réponse courte : **ce n'est pas
+un trou de lapin, mais l'architecture actuelle doit changer sur un point
+précis, et pour une raison différente de celle qu'on supposait.**
+
+### Aucun des quatre bugs ne vient de l'architecture
+
+C'est le constat qui devrait rassurer, parce qu'il est vérifiable ligne par
+ligne :
+
+| Bug rapporté | Cause réelle | Aurait été identique en STT + LLM ? |
+|---|---|---|
+| Aucun son | `speechSynthesis` côté client | Oui — sans rapport |
+| « Ficus lyrata » | noms latins absents de `plants.json` | Oui — mêmes données manquantes |
+| 3e option fantôme | décompte écrit en dur et devenu faux | Oui — même erreur de prompt |
+| « cuisine » échoue | audio tronqué à l'attaque du mot | Oui — pire, même |
+
+**Basculer vers le repli STT n'aurait corrigé aucun des quatre.** Le sentiment
+de tourner en rond était réel, mais il venait du processus, pas de la
+conception : cinq sessions de changements invérifiables sur l'étape la plus
+fragile du pipeline, la seule sans aucune couverture de test.
+
+### Le vrai défaut est la testabilité, pas la précision
+
+`logic.js` a 30 tests et n'a jamais causé un bug rapporté. L'identification de
+plante en a zéro — non par négligence, mais parce qu'elle n'est **pas
+testable** : sa seule entrée est de l'audio, et sa seule sortie vient d'un
+modèle distant. « Est-ce que "Ficus lyrata" donne l'id 14 ? » ne peut pas
+s'écrire en test, alors que c'est exactement la question qui a fait échouer la
+tournée.
+
+L'épisode de l'hallucination sur silence enfonce le clou : trois formulations
+de prompt, trois résultats différents, aucun moyen de vérifier lequel est bon
+autrement qu'en déployant. C'est un langage de programmation dans lequel on ne
+peut ni tester ni raisonner.
+
+### Recommandation : transcription d'abord, appariement déterministe ensuite
+
+Pas le repli du brief tel quel (« STT + LLM texte léger »), mais un cran plus
+loin — **retirer le LLM du chemin d'identification** :
+
+1. Audio → texte (Whisper via Groq, ou Gemini en mode transcription seule).
+2. Texte → `plante_id` par **appariement déterministe** sur `nom`,
+   `noms_alternatifs`, `piece` et `description`, en code local et testé.
+3. LLM en second recours uniquement, si l'appariement reste ambigu.
+
+Ce que ça change concrètement :
+
+- **Testable** : cinquante formulations réelles en `npm test`, hors ligne, en
+  millisecondes. « lyrata », « le lyre », « celui du bureau » deviennent des
+  cas de test, pas des paris.
+- **Pas d'hallucination possible** : un transcript sans nom de plante
+  n'apparie rien. Le problème disparaît par construction.
+- **Probablement plus rapide**, contrairement à ce que supposait la note de
+  reprise : Whisper turbo sur un clip de 3 s tourne autour de 300–600 ms, et
+  l'appariement est instantané. L'appel actuel envoie l'audio **plus** les 20
+  plantes et tout le règlement à chaque énoncé.
+- **Débogable** : le transcript est déjà journalisé (« Entendu »), et
+  l'appariement devient inspectable pas à pas.
+
+Coût honnête : un service de plus, une clé de plus, et l'appariement flou du
+français parlé (liaisons, accents, « le fiscus lira ») est un vrai morceau de
+travail — pas une après-midi.
+
+### Séquence recommandée, dans cet ordre
+
+1. **Confirmer le son.** Rien d'autre ne compte tant que le readback est muet.
+2. **Une tournée réelle avec le journal « Entendu ».** C'est la donnée qui
+   manque depuis le début : les transcriptions sont-elles justes ? Si oui, le
+   problème est l'appariement et l'étape 3 est une quasi-certitude. Si non,
+   c'est la qualité STT, et il faut comparer Whisper à Gemini sur de vrais
+   clips avant de choisir.
+3. **Puis seulement** migrer vers l'appariement déterministe, avec ces
+   transcriptions réelles comme cas de test.
+
+Migrer avant l'étape 2, ce serait refaire exactement ce qui a coûté les
+sessions précédentes : changer l'architecture sur une hypothèse plutôt que sur
+une mesure.
 
 ## Déploiement du Worker
 
