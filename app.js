@@ -5,7 +5,7 @@ import { templates } from './templates.js';
 // SHARED_TOKEN est volontairement visible côté client (le brief l'accepte
 // pour un produit personnel) ; c'est GEMINI_API_KEY, connu seulement du
 // Worker, qui protège réellement l'accès à Gemini.
-const WORKER_URL = 'https://TON-SOUS-DOMAINE.workers.dev';
+const WORKER_URL = 'https://ondee-proxy.mo-bergeron.workers.dev';
 const SHARED_TOKEN = 'c31c2a2a9f543b6c260853699730e8589e5d8c0bf677096b';
 
 // --- Constantes VAD (à calibrer sur l'appareil réel — voir section 9.2 du brief) ---
