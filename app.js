@@ -2,7 +2,7 @@
 const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère qu'un énoncé commence
 const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
 const MIN_UTTERANCE_MS = 300;       // ignore les pics trop courts (bruit, frottement)
-const ENERGY_BLOCK_SAMPLES = 1024;  // taille du bloc RMS calculé côté thread audio
+const ENERGY_BLOCK_SAMPLES = 512;   // taille du bloc RMS calculé côté thread audio (plus petit = barre plus réactive)
 const TTS_WATCHDOG_MS = 8000;       // filet de sécurité si 'end' ne se déclenche pas (iOS, app en arrière-plan)
 
 // Le calcul d'énergie tourne dans un AudioWorklet (thread audio), pas dans
