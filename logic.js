@@ -46,22 +46,30 @@ export function computeVerdict({ source, valeur, humiditeMin, taillePot, regime,
   return { type: 'arroser', lectureNorm, ecart, dose: computeDose(taillePot, ecart) };
 }
 
-// { source, valeur, verdict, pourcentageExplicite } -> texte à énoncer
-export function buildResponse({ source, valeur, verdict, pourcentageExplicite }) {
+// { source, valeur, verdict, pourcentageExplicite, humiditeMin, humiditeMax } -> texte à énoncer
+export function buildResponse({ source, valeur, verdict, pourcentageExplicite, humiditeMin, humiditeMax }) {
   if (verdict.type === 'hors_limite') {
     return templates.horsLimite();
   }
 
-  const lecture = templates.lecture(!estPourcentage(source, pourcentageExplicite), valeur);
+  const surDix = !estPourcentage(source, pourcentageExplicite);
+  const lecture = templates.lecture(surDix, valeur);
+  // La cible n'est annoncée que si on la connaît : buildResponse reste
+  // appelable sans elle (les tests de la grille de verdict n'en ont pas
+  // besoin), auquel cas on retombe sur l'ancienne formulation.
+  const mesure = humiditeMin != null && humiditeMax != null
+    ? `${lecture}, ${templates.cible(surDix, humiditeMin, humiditeMax)}.`
+    : `${lecture}.`;
+
   switch (verdict.type) {
     case 'ne_pas_arroser':
-      return `${lecture} ${templates.nePasArroser()}`;
+      return `${mesure} ${templates.nePasArroser()}`;
     case 'bientot':
-      return `${lecture} ${templates.bientot()}`;
+      return `${mesure} ${templates.bientot()}`;
     case 'arroser_ruissellement':
-      return `${lecture} ${templates.arroserRuissellement()}`;
+      return `${mesure} ${templates.arroserRuissellement()}`;
     case 'arroser':
-      return `${lecture} ${templates.arroserDose(verdict.dose)}`;
+      return `${mesure} ${templates.arroserDose(verdict.dose)}`;
     default:
       throw new Error(`type de verdict inconnu : ${verdict.type}`);
   }
