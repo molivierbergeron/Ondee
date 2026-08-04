@@ -9,7 +9,7 @@
     "humidite_min": 10,
     "humidite_max": 25,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 2,
@@ -21,7 +21,7 @@
     "humidite_min": 10,
     "humidite_max": 25,
     "taille_pot": "petit",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 3,
@@ -45,7 +45,7 @@
     "humidite_min": 10,
     "humidite_max": 25,
     "taille_pot": "petit",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 5,
@@ -57,7 +57,7 @@
     "humidite_min": 10,
     "humidite_max": 25,
     "taille_pot": "petit",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 6,
@@ -69,7 +69,7 @@
     "humidite_min": 10,
     "humidite_max": 25,
     "taille_pot": "petit",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 7,
@@ -81,7 +81,7 @@
     "humidite_min": 10,
     "humidite_max": 25,
     "taille_pot": "petit",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 8,
@@ -93,7 +93,7 @@
     "humidite_min": 25,
     "humidite_max": 40,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 9,
@@ -105,7 +105,7 @@
     "humidite_min": 25,
     "humidite_max": 40,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 10,
@@ -117,7 +117,7 @@
     "humidite_min": 25,
     "humidite_max": 40,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 11,
@@ -141,7 +141,7 @@
     "humidite_min": 25,
     "humidite_max": 45,
     "taille_pot": "grand",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 13,
@@ -153,7 +153,7 @@
     "humidite_min": 30,
     "humidite_max": 45,
     "taille_pot": "grand",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 14,
@@ -165,7 +165,7 @@
     "humidite_min": 30,
     "humidite_max": 45,
     "taille_pot": "grand",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 15,
@@ -189,7 +189,7 @@
     "humidite_min": 35,
     "humidite_max": 50,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 17,
@@ -213,7 +213,7 @@
     "humidite_min": 45,
     "humidite_max": 60,
     "taille_pot": "petit",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 19,
@@ -225,7 +225,7 @@
     "humidite_min": 45,
     "humidite_max": 60,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   },
   {
     "id": 20,
@@ -237,6 +237,6 @@
     "humidite_min": 45,
     "humidite_max": 60,
     "taille_pot": "moyen",
-    "regime": "mesure"
+    "regime": "complet"
   }
 ]

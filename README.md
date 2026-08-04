@@ -57,11 +57,12 @@ Le versioning affiché à l'écran (`v-tag` + `?v=` sur les fichiers) sert à co
 
 Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol cible » (pas « Arroser si ≤ », qui est un second seuil propre à la pratique manuelle de l'utilisateur — la grille du brief a déjà sa propre zone tampon de 5 points intégrée, donc les deux ne doivent pas se cumuler). `source` = 📱→`wh51`, ✋→`sonde`, directement depuis la table « usage quotidien ».
 
-**Trois décisions prises sans confirmation, à valider :**
+**Décisions restant à confirmer :**
 
 - `capteur_id` est `null` pour les 7 plantes en `wh51` (Pothos hawaïen, Monstera, Ficus pleureur, Ficus lyre, Croton, Plante-araignée, Calathea White Star). La page Notion liste des assignations (« WH51 #1 », « WH51L »…) mais elles ne concordent pas toujours avec la table d'usage quotidien (ex. Calathea lignes roses apparaît en ✋ dans un tableau et en WH51 #2 dans l'autre) — plutôt que deviner le canal `soil_ch1`–`soil_ch8` réel, à confirmer directement dans l'app Ecowitt en Phase 4.
-- `regime` mis à `mesure` partout par défaut (aucune de ces 20 plantes n'est explicitement documentée comme ayant drainage + soucoupe dans Notion). À corriger si certains pots ont vraiment un système de drainage complet.
 - `taille_pot` dérivé du diamètre de pot en pouces avec un seuil que j'ai choisi moi-même (petit ≤ 5", moyen 6–9", grand ≥ 10"), faute de seuil donné dans le brief. Ajustable si les doses ne semblent pas justes à l'usage.
+
+**`regime` mis à jour d'après description directe de l'utilisateur :** `complet` pour les 16 plantes en double pot (pot en plastique avec trous, posé dans un pot décoratif plus grand — parfois au contact du fond, parfois avec un jeu d'environ 0,5 cm), `mesure` pour les 4 sans ce montage (ZZ, Monstera, Dracaena, Plante-araignée). Point de vigilance non tranché par manque de précision par-plante : sur les pots qui touchent le fond sans jeu, l'eau de ruissellement n'a nulle part où aller — un risque réel pour les succulentes du lot (Sansevieria ×2, Aloe vera, Haworthia, Jade, Gasteria), plus sensibles à la pourriture des racines que les Pothos/Ficus/Calathea/Croton/Hypoestes du même groupe. Si un de ces pots-succulentes est de type « au contact », vaut la peine d'ajouter un petit espaceur (pied de pot, coupelle inversée) plutôt que de compter sur le ruissellement.
 
 `piece` simplifié à un seul mot par pièce (`Cuisine` plutôt que « Cuisine / Salle à manger ») pour matcher le style de désambiguïsation de la section 7 du brief (« Salon, chambre, ou bureau ? »).
 
@@ -99,18 +100,36 @@ Je n'ai pas pu vérifier la forme exacte du JSON renvoyé par `real_time` (docum
 
 ## Déploiement du Worker
 
-1. Obtenir une clé API Gemini sur [Google AI Studio](https://aistudio.google.com/apikey), et les clés Ecowitt (`application_key`, `api_key`, `mac`) sur [ecowitt.net](https://www.ecowitt.net).
-2. Dans `worker/wrangler.toml`, remplacer `TON-USERNAME` par le nom d'utilisateur GitHub réel (deux endroits : `ALLOWED_ORIGIN` et `PLANTS_URL`).
-3. `cd worker && npm install`
-4. `npx wrangler login`
-5. `npx wrangler deploy`
-6. Coller chaque secret au prompt interactif de la commande correspondante (jamais dans un fichier, jamais dans l'historique) :
-   - `npx wrangler secret put GEMINI_API_KEY`
-   - `npx wrangler secret put SHARED_TOKEN` — exactement la même valeur que `SHARED_TOKEN` dans `app.js`.
-   - `npx wrangler secret put ECOWITT_APPLICATION_KEY`
-   - `npx wrangler secret put ECOWITT_API_KEY`
-   - `npx wrangler secret put ECOWITT_MAC`
-7. Copier l'URL du Worker affichée par `wrangler deploy` dans `WORKER_URL` en tête de `app.js`, commiter, pousser, republier GitHub Pages.
+### Voie recommandée : GitHub Actions (aucun terminal requis)
+
+`.github/workflows/deploy-worker.yml` déploie automatiquement le Worker et met à jour ses 5 secrets à chaque changement dans `worker/`. La seule chose à faire : coller 7 valeurs dans les secrets GitHub du dépôt, une seule fois.
+
+**GitHub → ce dépôt → Settings → Secrets and variables → Actions → New repository secret**, une fois par ligne :
+
+| Nom du secret | Où le trouver |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | [dash.cloudflare.com](https://dash.cloudflare.com) → icône profil (en haut à droite) → **My Profile** → **API Tokens** → **Create Token** → modèle **Edit Cloudflare Workers** → Continue → Create Token → copier (affiché une seule fois) |
+| `CLOUDFLARE_ACCOUNT_ID` | [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → l'Account ID est affiché dans la colonne de droite |
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
+| `SHARED_TOKEN` | Coller exactement : `c31c2a2a9f543b6c260853699730e8589e5d8c0bf677096b` |
+| `ECOWITT_APPLICATION_KEY` | [ecowitt.net](https://www.ecowitt.net) |
+| `ECOWITT_API_KEY` | [ecowitt.net](https://www.ecowitt.net) |
+| `ECOWITT_MAC` | [ecowitt.net](https://www.ecowitt.net) (adresse MAC de la passerelle) |
+
+Une fois les 7 secrets ajoutés : **GitHub → Actions → Deploy Worker → Run workflow** (bouton à droite) pour déclencher le premier déploiement sans attendre un nouveau push.
+
+Le run affiche l'URL du Worker déployé dans ses logs (ligne du type `https://ondee-proxy.<ton-sous-domaine>.workers.dev`) — donne-la-moi, je la mets dans `WORKER_URL` en tête de `app.js` et je republie.
+
+### Voie alternative : `wrangler` en local
+
+Si un terminal est plus simple pour toi que la page des secrets GitHub :
+
+1. `cd worker && npm install`
+2. `npx wrangler login`
+3. `npx wrangler deploy`
+4. Coller chaque secret au prompt interactif (jamais dans un fichier, jamais dans l'historique) :
+   `npx wrangler secret put GEMINI_API_KEY`, puis `SHARED_TOKEN`, `ECOWITT_APPLICATION_KEY`, `ECOWITT_API_KEY`, `ECOWITT_MAC`.
+5. Copier l'URL affichée dans `WORKER_URL` en tête de `app.js`, commiter, pousser.
 
 ### Non testé
 

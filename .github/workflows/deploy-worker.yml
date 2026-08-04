@@ -1,0 +1,44 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches:
+      - claude/plant-watering-voice-assistant-yq8f7x
+      - main
+    paths:
+      - "worker/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install
+
+      - name: Déployer le Worker
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # wrangler secret put lit la valeur sur stdin en mode non-interactif —
+      # ça reste la clé qui est secrète, jamais cette commande elle-même.
+      - name: Mettre à jour les secrets
+        run: |
+          echo "${{ secrets.GEMINI_API_KEY }}" | npx wrangler secret put GEMINI_API_KEY
+          echo "${{ secrets.SHARED_TOKEN }}" | npx wrangler secret put SHARED_TOKEN
+          echo "${{ secrets.ECOWITT_APPLICATION_KEY }}" | npx wrangler secret put ECOWITT_APPLICATION_KEY
+          echo "${{ secrets.ECOWITT_API_KEY }}" | npx wrangler secret put ECOWITT_API_KEY
+          echo "${{ secrets.ECOWITT_MAC }}" | npx wrangler secret put ECOWITT_MAC
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
