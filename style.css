@@ -75,6 +75,23 @@ h1 {
   cursor: default;
 }
 
+.stop-btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  padding: 8px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+.stop-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .last-response {
   margin-top: 28px;
   font-size: 1.1rem;

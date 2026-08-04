@@ -66,6 +66,7 @@ const energyFill = document.getElementById('energy-fill');
 const energyThresholdMarker = document.getElementById('energy-threshold-marker');
 const log = document.getElementById('log');
 const refreshBtn = document.getElementById('refresh-btn');
+const stopBtn = document.getElementById('stop-btn');
 const lastResponseEl = document.getElementById('last-response');
 
 energyThresholdMarker.style.left = `${ENERGY_THRESHOLD * 100}%`;
@@ -73,6 +74,7 @@ energyThresholdMarker.style.left = `${ENERGY_THRESHOLD * 100}%`;
 let wakeLock = null;
 let audioCtx = null;
 let vadNode = null;
+let micStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
 let recording = false;
@@ -178,7 +180,7 @@ function speak(text) {
 
 // --- Micro + VAD par énergie ---
 async function startMic() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
   setStatus(statusMic, 'actif', 'ok');
 
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -191,7 +193,7 @@ async function startMic() {
   await audioCtx.audioWorklet.addModule(workletUrl);
   URL.revokeObjectURL(workletUrl);
 
-  const source = audioCtx.createMediaStreamSource(stream);
+  const source = audioCtx.createMediaStreamSource(micStream);
   vadNode = new AudioWorkletNode(audioCtx, 'vad-processor');
   source.connect(vadNode);
 
@@ -204,11 +206,59 @@ async function startMic() {
 
   vadNode.port.onmessage = (event) => handleEnergyReading(event.data);
 
-  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder = new MediaRecorder(micStream);
   mediaRecorder.addEventListener('dataavailable', (e) => {
     if (e.data.size > 0) recordedChunks.push(e.data);
   });
   mediaRecorder.addEventListener('stop', onUtteranceComplete);
+}
+
+// Arrête tout ce que startMic()/acquireWakeLock() ont ouvert : le brief
+// prévoyait "terminer = fermer la page" (section 2), mais en usage réel il
+// faut un moyen de couper le micro sans recharger toute la session.
+async function stopSession() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.removeEventListener('stop', onUtteranceComplete);
+    mediaRecorder.stop();
+  }
+  mediaRecorder = null;
+
+  speechSynthesis.cancel();
+  if (ttsWatchdogId !== null) {
+    clearTimeout(ttsWatchdogId);
+    ttsWatchdogId = null;
+  }
+
+  if (vadNode) {
+    vadNode.port.onmessage = null;
+    vadNode = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach((track) => track.stop());
+    micStream = null;
+  }
+  if (audioCtx) {
+    await audioCtx.close();
+    audioCtx = null;
+  }
+  if (wakeLock) {
+    const lock = wakeLock;
+    wakeLock = null; // avant release() : évite que le handler visibilitychange ne le rallume
+    await lock.release();
+  }
+
+  ttsSpeaking = false;
+  processing = false;
+  recording = false;
+  pendingDisambiguation = null;
+
+  setStatus(statusMic, 'arrêté', null);
+  setStatus(statusVad, 'arrêté', null);
+  energyFill.style.width = '0%';
+  stopBtn.hidden = true;
+  refreshBtn.hidden = true;
+  startBtn.disabled = false;
+  startBtn.textContent = 'Démarrer';
 }
 
 function handleEnergyReading(rms) {
@@ -379,6 +429,13 @@ refreshBtn.addEventListener('click', async () => {
   refreshBtn.disabled = false;
 });
 
+stopBtn.addEventListener('click', () => {
+  stopBtn.disabled = true;
+  stopSession().finally(() => {
+    stopBtn.disabled = false;
+  });
+});
+
 // --- Démarrage (geste utilisateur unique) ---
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
@@ -391,6 +448,7 @@ startBtn.addEventListener('click', async () => {
     await loadPlants();
     await loadSensorReadings();
     await startMic();
+    stopBtn.hidden = false;
   } catch (err) {
     setStatus(statusMic, `échec: ${err.message}`, 'error');
   }
