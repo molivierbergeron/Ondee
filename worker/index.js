@@ -77,18 +77,47 @@ function base64FromArrayBuffer(buffer) {
   return btoa(binary);
 }
 
-async function handleComprendre(request, env, candidateIds) {
-  const plantsResponse = await fetch(env.PLANTS_URL);
-  if (!plantsResponse.ok) {
-    return jsonResponse({ plante_id: null }, env, 502);
+// plants.json est quasi statique (édité à la main, pas par énoncé) — le
+// refetcher à chaque tour d'arrosage ajoutait un aller-retour réseau complet
+// avant même d'appeler Gemini. Mis en cache en mémoire le temps que
+// l'isolate Worker reste chaud (quelques minutes typiquement, largement
+// assez pour une tournée de ~15 min).
+let plantsCache = null;
+let plantsCacheAt = 0;
+const PLANTS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function fetchPlants(env) {
+  const now = Date.now();
+  if (plantsCache && now - plantsCacheAt < PLANTS_CACHE_TTL_MS) {
+    return plantsCache;
   }
-  let plants = await plantsResponse.json();
+  const response = await fetch(env.PLANTS_URL);
+  if (!response.ok) {
+    throw new Error(`plants.json : ${response.status}`);
+  }
+  plantsCache = await response.json();
+  plantsCacheAt = now;
+  return plantsCache;
+}
+
+async function handleComprendre(request, env, candidateIds) {
+  const mimeType = request.headers.get('Content-Type') || 'audio/webm';
+
+  // Le fetch de plants.json (ou son cache) et la lecture du corps audio sont
+  // indépendants — autant les faire en parallèle plutôt qu'en série.
+  const [plantsResult, audioBuffer] = await Promise.all([
+    fetchPlants(env).catch((err) => ({ erreur: err })),
+    request.arrayBuffer(),
+  ]);
+  if (plantsResult && plantsResult.erreur) {
+    return jsonResponse({ plante_id: null, erreur: String(plantsResult.erreur) }, env, 502);
+  }
+
+  let plants = plantsResult;
   if (candidateIds) {
     plants = plants.filter((p) => candidateIds.includes(p.id));
   }
 
-  const mimeType = request.headers.get('Content-Type') || 'audio/webm';
-  const audioBuffer = await request.arrayBuffer();
   const base64Audio = base64FromArrayBuffer(audioBuffer);
 
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`;
@@ -99,7 +128,14 @@ async function handleComprendre(request, env, candidateIds) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: buildSystemPrompt(plants, candidateIds) }] },
       contents: [{ parts: [{ inlineData: { mimeType, data: base64Audio } }] }],
-      generationConfig: { responseMimeType: 'application/json' },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        // Identifier une plante dans une liste à partir d'un court énoncé
+        // n'a besoin d'aucun raisonnement étendu — le "thinking" par défaut
+        // de Flash n'ajoutait que de la latence pour cette tâche.
+        thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 150,
+      },
     }),
   });
 
