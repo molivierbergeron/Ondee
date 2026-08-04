@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f4f0">
+<title>Ondee — Phase 0</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Ondee</h1>
+    <p class="subtitle">Phase 0 — test de faisabilité</p>
+
+    <button id="start-btn">Démarrer</button>
+
+    <section class="status" id="status" hidden>
+      <div class="status-row">
+        <span class="status-label">Écran</span>
+        <span class="status-value" id="status-wakelock">—</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Micro</span>
+        <span class="status-value" id="status-mic">—</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">État</span>
+        <span class="status-value" id="status-vad">—</span>
+      </div>
+      <div class="energy-bar">
+        <div class="energy-bar-fill" id="energy-fill"></div>
+        <div class="energy-threshold" id="energy-threshold-marker"></div>
+      </div>
+    </section>
+
+    <ul class="log" id="log" hidden></ul>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
