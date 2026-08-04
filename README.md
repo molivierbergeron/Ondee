@@ -51,16 +51,6 @@ Deux comportements Safari non documentés dans le brief, découverts et corrigé
 
 Le versioning affiché à l'écran (`v-tag` + `?v=` sur les fichiers) sert à confirmer sur l'appareil qu'on teste bien le dernier build et pas une copie mise en cache par Safari.
 
-## Phase 2 — Logique déterministe
-
-`logic.js` (normalisation, grille verdict/dose de la section 4.2) et `templates.js` (gabarits vocaux de la section 4.3), tous deux non liés à l'interface pour l'instant — le câblage arrive en Phase 3, une fois le LLM capable de fournir `{plante_id, valeur}`.
-
-Tests unitaires sur toute la grille (limites d'écart, dose par taille de pot, régime complet, garde-fou de normalisation) :
-
-```
-npm test
-```
-
 ## Phase 1 — Données
 
 `plants.json` structuré à partir de la page Notion « 🌿 Mes plantes — Identification & entretien » (table d'arrosage pratique, 20 plantes d'intérieur — les cèdres extérieurs en pleine terre en sont exclus, hors sujet pour une tournée mains libres en pot).
@@ -74,6 +64,14 @@ Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol
 - `taille_pot` dérivé du diamètre de pot en pouces avec un seuil que j'ai choisi moi-même (petit ≤ 5", moyen 6–9", grand ≥ 10"), faute de seuil donné dans le brief. Ajustable si les doses ne semblent pas justes à l'usage.
 
 `piece` simplifié à un seul mot par pièce (`Cuisine` plutôt que « Cuisine / Salle à manger ») pour matcher le style de désambiguïsation de la section 7 du brief (« Salon, chambre, ou bureau ? »).
+
+## Phase 2 — Logique déterministe
+
+`logic.js` (normalisation, grille verdict/dose de la section 4.2) et `templates.js` (gabarits vocaux de la section 4.3). Tests unitaires sur toute la grille (limites d'écart, dose par taille de pot, régime complet, garde-fou de normalisation) :
+
+```
+npm test
+```
 
 ## Phase 3 — LLM + proxy
 
