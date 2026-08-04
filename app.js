@@ -1,3 +1,13 @@
+import { computeVerdict, buildResponse } from './logic.js';
+import { templates } from './templates.js';
+
+// --- Proxy Cloudflare Worker (section 5.4 du brief) ---
+// SHARED_TOKEN est volontairement visible côté client (le brief l'accepte
+// pour un produit personnel) ; c'est GEMINI_API_KEY, connu seulement du
+// Worker, qui protège réellement l'accès à Gemini.
+const WORKER_URL = 'https://TON-SOUS-DOMAINE.workers.dev';
+const SHARED_TOKEN = 'c31c2a2a9f543b6c260853699730e8589e5d8c0bf677096b';
+
 // --- Constantes VAD (à calibrer sur l'appareil réel — voir section 9.2 du brief) ---
 const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère qu'un énoncé commence
 const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
@@ -70,6 +80,13 @@ let ttsSpeaking = false;
 let ttsWatchdogId = null;
 let frenchVoice = null;
 let currentUtterance = null; // référence forte : évite le GC prématuré qui empêche 'end' de se déclencher (bug WebKit connu)
+let processing = false; // true pendant l'appel au Worker, pour ne pas démarrer un nouvel enregistrement par-dessus
+let lastSpokenText = null; // pour la commande "répète" (rejouée sans appel API, section 5.2)
+let plants = [];
+
+function findPlant(id) {
+  return plants.find((p) => p.id === id);
+}
 
 function setStatus(el, text, kind) {
   el.textContent = text;
@@ -108,7 +125,7 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
-// --- Voix française pour le TTS de test ---
+// --- Voix française pour la synthèse vocale ---
 function pickFrenchVoice() {
   const voices = speechSynthesis.getVoices();
   frenchVoice = voices.find(v => v.lang.startsWith('fr')) || null;
@@ -130,7 +147,8 @@ function estimateSpeechDurationMs(text) {
   return Math.min(estimate, SPEECH_MAX_MS);
 }
 
-function speakTest(text) {
+function speak(text) {
+  lastSpokenText = text;
   speechSynthesis.cancel(); // vide toute file bloquée d'un essai précédent
 
   const utterance = new SpeechSynthesisUtterance(text);
@@ -186,7 +204,7 @@ async function startMic() {
 function handleEnergyReading(rms) {
   energyFill.style.width = `${Math.min(rms / (ENERGY_THRESHOLD * 4), 1) * 100}%`;
 
-  if (ttsSpeaking) return;
+  if (ttsSpeaking || processing) return;
 
   const aboveThreshold = rms > ENERGY_THRESHOLD;
 
@@ -218,7 +236,56 @@ function endUtterance() {
   mediaRecorder.stop();
 }
 
-function onUtteranceComplete() {
+async function comprendreUtterance(blob, mimeType) {
+  const response = await fetch(`${WORKER_URL}/comprendre`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SHARED_TOKEN}`,
+      'Content-Type': mimeType,
+    },
+    body: blob,
+  });
+  if (!response.ok) {
+    throw new Error(`Worker : ${response.status}`);
+  }
+  return response.json();
+}
+
+function handleResult(result) {
+  if (result.commande === 'repete') {
+    speak(lastSpokenText || templates.nonReconnu());
+    return;
+  }
+
+  if (result.plante_id == null) {
+    if (Array.isArray(result.ambigus) && result.ambigus.length > 0) {
+      const pieces = [...new Set(result.ambigus.map((id) => findPlant(id)?.piece).filter(Boolean))];
+      speak(pieces.length > 0 ? templates.ambiguite(pieces) : templates.nonReconnu());
+    } else {
+      speak(templates.nonReconnu());
+    }
+    return;
+  }
+
+  const plant = findPlant(result.plante_id);
+  if (!plant || typeof result.valeur !== 'number' || Number.isNaN(result.valeur)) {
+    speak(templates.nonReconnu());
+    return;
+  }
+
+  const verdict = computeVerdict({
+    source: plant.source,
+    valeur: result.valeur,
+    humiditeMin: plant.humidite_min,
+    taillePot: plant.taille_pot,
+    regime: plant.regime,
+  });
+  const response = buildResponse({ source: plant.source, valeur: result.valeur, verdict });
+  addLogEntry(plant.nom, response);
+  speak(response);
+}
+
+async function onUtteranceComplete() {
   const durationMs = performance.now() - utteranceStartedAt - SILENCE_DURATION_MS;
 
   if (durationMs < MIN_UTTERANCE_MS) {
@@ -226,9 +293,24 @@ function onUtteranceComplete() {
     return;
   }
 
-  const seconds = (durationMs / 1000).toFixed(1);
-  addLogEntry('Énoncé détecté', `${seconds} s`);
-  speakTest(`Énoncé détecté, ${seconds.replace('.', ',')} secondes.`);
+  const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+  processing = true;
+  setStatus(statusVad, 'traitement…', null);
+
+  try {
+    const result = await comprendreUtterance(blob, mediaRecorder.mimeType);
+    handleResult(result);
+  } catch (err) {
+    addLogEntry('Erreur', err.message);
+    speak(templates.nonReconnu());
+  } finally {
+    processing = false;
+  }
+}
+
+async function loadPlants() {
+  const response = await fetch('plants.json');
+  plants = await response.json();
 }
 
 // --- Démarrage (geste utilisateur unique) ---
@@ -240,6 +322,7 @@ startBtn.addEventListener('click', async () => {
   await acquireWakeLock();
 
   try {
+    await loadPlants();
     await startMic();
   } catch (err) {
     setStatus(statusMic, `échec: ${err.message}`, 'error');

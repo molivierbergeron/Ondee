@@ -75,8 +75,28 @@ Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol
 
 `piece` simplifié à un seul mot par pièce (`Cuisine` plutôt que « Cuisine / Salle à manger ») pour matcher le style de désambiguïsation de la section 7 du brief (« Salon, chambre, ou bureau ? »).
 
+## Phase 3 — LLM + proxy
+
+`worker/` contient le Worker Cloudflare (`index.js` + `wrangler.toml`) qui détient la clé Gemini côté serveur et relaie l'audio. `app.js` est câblé dessus : chaque énoncé enregistré part vers `${WORKER_URL}/comprendre`, la réponse JSON (`plante_id`/`valeur`, ambiguïté, non-reconnu, ou `répète`) passe par `logic.js` pour le verdict, puis `speak()`.
+
+**La clé Gemini ne va jamais dans le dépôt ni dans le chat** — uniquement dans le secret Cloudflare du Worker. `SHARED_TOKEN`, lui, est volontairement visible côté client (accepté par le brief pour un produit personnel) ; c'est la clé Gemini, connue seulement du Worker, qui protège réellement l'accès à l'API.
+
+### Déploiement
+
+1. Obtenir une clé API Gemini sur [Google AI Studio](https://aistudio.google.com/apikey).
+2. Dans `worker/wrangler.toml`, remplacer `TON-USERNAME` par le nom d'utilisateur GitHub réel (deux endroits : `ALLOWED_ORIGIN` et `PLANTS_URL`).
+3. `cd worker && npm install`
+4. `npx wrangler login`
+5. `npx wrangler deploy`
+6. `npx wrangler secret put GEMINI_API_KEY` — coller la clé au prompt interactif (jamais dans un fichier, jamais dans l'historique de commandes).
+7. `npx wrangler secret put SHARED_TOKEN` — coller exactement la même valeur que `SHARED_TOKEN` dans `app.js`.
+8. Copier l'URL du Worker affichée par `wrangler deploy` dans `WORKER_URL` en tête de `app.js`, commiter, pousser, republier GitHub Pages.
+
+### Non testé
+
+Contrairement aux Phases 0/1/2, ce câblage n'a pas pu être testé en conditions réelles (pas d'accès à un compte Cloudflare ni à une clé Gemini dans cette session) : ni le format exact attendu par l'API Gemini (modèle `gemini-flash-latest`, `responseMimeType: application/json`), ni la latence bout-en-bout (cible < 3 s, section 9), ni la qualité réelle d'identification par le LLM. À valider comme la Phase 0 — probable itération d'ajustement une fois testé sur l'appareil.
+
 ## Phases suivantes
 
-- **Phase 3 — LLM + proxy** : nécessite la création du Worker Cloudflare et une clé API Gemini, à fournir par l'utilisateur.
 - **Phase 4 — Ecowitt** : nécessite les clés API Ecowitt (`application_key`, `api_key`, `mac`) et la confirmation des `capteur_id` laissés `null` en Phase 1.
 - **Phase 5 — Finition** : UI, PWA, README final.

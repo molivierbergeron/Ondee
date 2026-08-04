@@ -1,0 +1,13 @@
+name = "ondee-proxy"
+main = "index.js"
+compatibility_date = "2026-01-01"
+
+# Variables non secrètes — modifiables ici sans redéploiement de code.
+[vars]
+GEMINI_MODEL = "gemini-flash-latest"
+ALLOWED_ORIGIN = "https://TON-USERNAME.github.io"
+PLANTS_URL = "https://TON-USERNAME.github.io/Ondee/plants.json"
+
+# Secrets — NE JAMAIS les mettre ici. Définis-les après le premier déploiement :
+#   wrangler secret put GEMINI_API_KEY
+#   wrangler secret put SHARED_TOKEN
