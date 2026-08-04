@@ -80,6 +80,8 @@ npm test
 
 **La clé Gemini ne va jamais dans le dépôt ni dans le chat** — uniquement dans le secret Cloudflare du Worker. `SHARED_TOKEN`, lui, est volontairement visible côté client (accepté par le brief pour un produit personnel) ; c'est la clé Gemini, connue seulement du Worker, qui protège réellement l'accès à l'API.
 
+Tuyauterie confirmée par un appel réel (clip silencieux) : auth, clé API, nom de modèle, mode JSON et parsing fonctionnent — Gemini a correctement répondu `{"plante_id": null}` pour du silence. **Ce qui reste non testé : la qualité de reconnaissance sur un vrai énoncé** (nom flou, bruit ambiant, accent) et la latence bout-en-bout réelle — ça ne peut se valider qu'avec une vraie voix sur l'appareil.
+
 ## Phase 4 — Ecowitt
 
 Endpoint `GET /capteurs` ajouté au même Worker (section 6 du brief) : appelle `api.ecowitt.net/api/v3/device/real_time` avec les clés Ecowitt côté serveur, renvoie `{ readings: { soil_ch1: 32, ... } }`. `app.js` l'appelle une seule fois au démarrage de la session (l'humidité du sol évolue sur des heures, pas par énoncé) et un bouton discret « rafraîchir les capteurs » permet de le refaire en cas de doute.
@@ -88,9 +90,9 @@ Pour une plante `wh51` dont le `capteur_id` est renseigné, la lecture vient de 
 
 **Ne fonctionnera pour aucune des 7 plantes wh51 tant que leurs `capteur_id` restent à `null`** (voir Phase 1) — en attendant, elles retombent sur `capteurIndisponible()` si aucun chiffre n'est dicté non plus.
 
-### Forme de réponse Ecowitt non confirmée
+### Forme de réponse Ecowitt — confirmée
 
-Je n'ai pas pu vérifier la forme exacte du JSON renvoyé par `real_time` (documentation officielle inaccessible en recherche depuis cette session, plusieurs pages ont renvoyé des 403). Le parsing dans `extractSoilValue()` (`worker/index.js`) suppose `data.data.soil_chN.soilmoisture.value`, avec deux chemins de repli, et ignore silencieusement un canal illisible plutôt que de faire échouer toute la lecture. **À vérifier au premier vrai appel** — si les lectures reviennent vides, c'est probablement là.
+La forme supposée (`data.data.soil_chN.soilmoisture.value`) était la bonne : validée par un vrai appel post-déploiement, 7 canaux actifs (`soil_ch1`–`soil_ch7`) ont renvoyé des lectures réelles (57, 50, 41, 42, 29, 28, 51 — un canal `soil_ch8` inutilisé). Ça correspond au compte de 7 plantes `wh51` dans `plants.json`, bon signe que les 7 capteurs sont bien posés. Reste uniquement à faire correspondre chaque canal à sa plante (les lectures seules ne suffisent pas à deviner ça de façon fiable — plusieurs plages cibles se chevauchent) : le plus simple est de vérifier dans l'app Ecowitt quel capteur porte quel nom/emplacement.
 
 ## Phase 5 — Finition
 
@@ -131,6 +133,11 @@ Si un terminal est plus simple pour toi que la page des secrets GitHub :
    `npx wrangler secret put GEMINI_API_KEY`, puis `SHARED_TOKEN`, `ECOWITT_APPLICATION_KEY`, `ECOWITT_API_KEY`, `ECOWITT_MAC`.
 5. Copier l'URL affichée dans `WORKER_URL` en tête de `app.js`, commiter, pousser.
 
-### Non testé
+### État réel après déploiement
 
-Rien depuis la Phase 2 n'a pu être testé en conditions réelles (pas d'accès à un compte Cloudflare, à une clé Gemini, ni à des clés Ecowitt dans cette session) : ni le format exact attendu par l'API Gemini (modèle `gemini-flash-latest`, `responseMimeType: application/json`), ni celui d'Ecowitt (voir Phase 4), ni la latence bout-en-bout (cible < 3 s, section 9), ni la qualité réelle d'identification par le LLM. À valider comme la Phase 0 — probable itération d'ajustement une fois testé sur l'appareil.
+Le Worker est déployé et validé par de vrais appels (voir `.github/workflows/deploy-worker.yml`, étape « Vérifier le déploiement », qui tourne à chaque déploiement) :
+
+- `/capteurs` → vraies lectures Ecowitt (7 canaux).
+- `/comprendre` → réponse JSON correcte sur un clip silencieux.
+
+**Ce qui reste à valider sur l'appareil, pas depuis un environnement de dev :** la qualité de reconnaissance vocale sur de vrais énoncés (nom flou, bruit ambiant), la latence bout-en-bout ressentie (cible < 3 s, section 9), et — une fois les `capteur_id` renseignés — que la bonne lecture capteur arrive à la bonne plante.
