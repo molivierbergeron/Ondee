@@ -10,6 +10,15 @@ const SHARED_TOKEN = 'c31c2a2a9f543b6c260853699730e8589e5d8c0bf677096b';
 
 // --- Constantes VAD (à calibrer sur l'appareil réel — voir section 9.2 du brief) ---
 const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère qu'un énoncé commence
+// L'enregistrement ne démarrait qu'une fois ENERGY_THRESHOLD franchi, donc
+// après l'attaque du mot : une consonne sourde ("c" de "cuisine") passe sous
+// le seuil pendant 100–200 ms et se retrouvait coupée. Sur une phrase, sans
+// importance ; sur une réponse d'un seul mot — exactement le cas de la
+// désambiguïsation — il ne reste plus grand-chose à reconnaître. On arme donc
+// le magnétophone bien plus bas, et on décide seulement après coup si ce qui
+// a été capté était un vrai énoncé ou du bruit à jeter.
+const ENERGY_PREARM_THRESHOLD = 0.008;
+const PREARM_MAX_WAIT_MS = 700;     // sans franchissement du vrai seuil dans ce délai, c'était du bruit
 const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
 const MIN_UTTERANCE_MS = 200;       // ignore les pics trop courts (bruit, frottement) — assez bas pour ne pas avaler une réponse d'un mot ("bureau", "répète")
 const ENERGY_BLOCK_SAMPLES = 512;   // taille du bloc RMS calculé côté thread audio (plus petit = barre plus réactive)
@@ -67,6 +76,8 @@ const energyThresholdMarker = document.getElementById('energy-threshold-marker')
 const log = document.getElementById('log');
 const refreshBtn = document.getElementById('refresh-btn');
 const stopBtn = document.getElementById('stop-btn');
+const statusVoice = document.getElementById('status-voice');
+const testVoiceBtn = document.getElementById('test-voice-btn');
 const lastResponseEl = document.getElementById('last-response');
 const etatPrincipal = document.getElementById('etat-principal');
 const etatTexte = document.getElementById('etat-texte');
@@ -102,6 +113,10 @@ let recordedChunks = [];
 let recording = false;
 let silenceStartedAt = null;
 let utteranceStartedAt = null;
+let armed = false;              // magnétophone démarré, énoncé pas encore confirmé
+let armedAt = null;
+let rearmBlocked = false;       // attend un retour sous le seuil bas avant de réarmer
+let discardingRecording = false; // ce 'stop' ferme du bruit, pas un énoncé
 let ttsSpeaking = false;
 let ttsWatchdogId = null;
 let frenchVoice = null;
@@ -164,7 +179,14 @@ function pickFrenchVoice() {
 }
 speechSynthesis.addEventListener('voiceschanged', pickFrenchVoice);
 
-function endTtsSpeaking() {
+// Chaque appel à speak() incrémente ce compteur ; les handlers d'un énoncé
+// capturent leur génération et se taisent si une autre a démarré depuis.
+// Sans ça, le 'end' d'un énoncé qu'on vient d'annuler venait refermer l'état
+// de son remplaçant, à peine commencé.
+let ttsGeneration = 0;
+
+function endTtsSpeaking(generation) {
+  if (generation !== ttsGeneration) return;
   ttsSpeaking = false;
   currentUtterance = null;
   if (ttsWatchdogId !== null) {
@@ -179,25 +201,72 @@ function estimateSpeechDurationMs(text) {
   return Math.min(estimate, SPEECH_MAX_MS);
 }
 
-function speak(text) {
-  lastSpokenText = text;
-  lastResponseEl.textContent = text;
-  lastResponseEl.hidden = false;
-  speechSynthesis.cancel(); // vide toute file bloquée d'un essai précédent
-
+// Le silence total rapporté en test réel a trois causes possibles qu'aucune
+// relecture de code ne permet de départager sans l'appareil. On traite les
+// trois d'un coup, et on ajoute un témoin (ligne « Voix ») qui, lui, permet
+// de trancher au prochain test :
+//   1. cancel() suivi immédiatement de speak() : WebKit laisse sa file dans
+//      un état intermédiaire et avale l'énoncé suivant. C'est le seul écart
+//      entre le code d'ici et celui de la Phase 0, qui était audible.
+//   2. Session audio iOS : une fois getUserMedia actif, la sortie de la
+//      synthèse peut être coupée. On amorce donc la synthèse à l'intérieur
+//      même du geste « Démarrer », avant tout await et avant le micro.
+//   3. Interrupteur silencieux / volume à zéro : indistinguable d'un bug JS
+//      sans témoin. Si 'start' se déclenche mais qu'on n'entend rien, c'est
+//      cette piste-là ; si 'start' ne se déclenche jamais, c'est l'API.
+function speakNow(text, generation) {
   const utterance = new SpeechSynthesisUtterance(text);
   if (frenchVoice) utterance.voice = frenchVoice;
   utterance.lang = 'fr-FR';
   currentUtterance = utterance; // sans cette référence, WebKit peut GC l'objet et ne jamais émettre 'end'
+
+  utterance.addEventListener('start', () => {
+    setStatus(statusVoice, frenchVoice ? `parle · ${frenchVoice.name}` : 'parle · voix par défaut', 'ok');
+  });
+  utterance.addEventListener('end', () => endTtsSpeaking(generation));
+  utterance.addEventListener('error', (event) => {
+    const raison = event.error || 'inconnue';
+    setStatus(statusVoice, `erreur: ${raison}`, 'error');
+    addLogEntry('Voix', `erreur: ${raison}`);
+    endTtsSpeaking(generation);
+  });
+
+  speechSynthesis.resume(); // iOS laisse parfois la file en pause après un changement d'app
+  speechSynthesis.speak(utterance);
+
+  // Si ni 'start' ni speechSynthesis.speaking après une seconde, l'API n'a
+  // rien lancé du tout — ce n'est alors pas une question de volume.
+  setTimeout(() => {
+    if (generation !== ttsGeneration) return;
+    if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+      setStatus(statusVoice, 'aucun son émis par l’API', 'error');
+      addLogEntry('Voix', 'speak() sans effet');
+    }
+  }, 1000);
+}
+
+function speak(text) {
+  lastSpokenText = text;
+  lastResponseEl.textContent = text;
+  lastResponseEl.hidden = false;
+
+  const generation = ++ttsGeneration;
   ttsSpeaking = true;
   setEtat('réponse…', null);
   // 'end'/'error' servent de raccourci s'ils se déclenchent, mais le timer
   // estimé ci-dessous est ce qui referme réellement l'état dans la majorité
   // des cas — voir la note sur la fiabilité de 'end' plus haut.
-  utterance.addEventListener('end', endTtsSpeaking);
-  utterance.addEventListener('error', endTtsSpeaking);
-  ttsWatchdogId = setTimeout(endTtsSpeaking, estimateSpeechDurationMs(text));
-  speechSynthesis.speak(utterance);
+  if (ttsWatchdogId !== null) clearTimeout(ttsWatchdogId);
+  ttsWatchdogId = setTimeout(() => endTtsSpeaking(generation), estimateSpeechDurationMs(text));
+
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
+    // On ne coupe que s'il y a vraiment quelque chose à couper, et on laisse
+    // un tour de boucle à WebKit pour vider sa file avant de reparler.
+    speechSynthesis.cancel();
+    setTimeout(() => speakNow(text, generation), 0);
+  } else {
+    speakNow(text, generation);
+  }
 }
 
 // --- Micro + VAD par énergie ---
@@ -269,9 +338,13 @@ async function stopSession() {
     await lock.release();
   }
 
+  ttsGeneration++; // neutralise les handlers de l'énoncé en cours
   ttsSpeaking = false;
   processing = false;
   recording = false;
+  armed = false;
+  rearmBlocked = false;
+  discardingRecording = false;
   pendingDisambiguation = null;
 
   setStatus(statusMic, 'arrêté', null);
@@ -289,10 +362,9 @@ function handleEnergyReading(rms) {
   if (ttsSpeaking || processing) return;
 
   const aboveThreshold = rms > ENERGY_THRESHOLD;
+  const abovePrearm = rms > ENERGY_PREARM_THRESHOLD;
 
-  if (!recording && aboveThreshold) {
-    beginUtterance();
-  } else if (recording) {
+  if (recording) {
     if (aboveThreshold) {
       silenceStartedAt = null;
     } else if (silenceStartedAt === null) {
@@ -300,16 +372,51 @@ function handleEnergyReading(rms) {
     } else if (performance.now() - silenceStartedAt >= SILENCE_DURATION_MS) {
       endUtterance();
     }
+    return;
+  }
+
+  // Le réarmement attend un vrai retour au calme : sans ça, un bruit de fond
+  // stable juste au-dessus du seuil bas ferait démarrer/arrêter le
+  // magnétophone en boucle pendant toute la tournée.
+  if (!abovePrearm) {
+    rearmBlocked = false;
+  }
+
+  if (!armed && abovePrearm && !rearmBlocked) {
+    armRecorder();
+  } else if (armed && aboveThreshold) {
+    confirmUtterance();
+  } else if (armed && performance.now() - armedAt >= PREARM_MAX_WAIT_MS) {
+    discardArmedRecording();
   }
 }
 
-function beginUtterance() {
+function armRecorder() {
+  if (!mediaRecorder || mediaRecorder.state !== 'inactive') return;
+  armed = true;
+  armedAt = performance.now();
+  discardingRecording = false;
+  recordedChunks = [];
+  mediaRecorder.start();
+}
+
+// L'énoncé a franchi le vrai seuil : ce qui est déjà dans le tampon depuis
+// l'armement en fait partie, attaque du premier mot comprise.
+function confirmUtterance() {
+  armed = false;
   recording = true;
   silenceStartedAt = null;
   utteranceStartedAt = performance.now();
-  recordedChunks = [];
-  mediaRecorder.start();
   setEtat('écoute…', 'ok');
+}
+
+// Bruit : on ferme sans rien envoyer. Le 'stop' déclenche quand même
+// onUtteranceComplete, d'où le drapeau qu'il y consulte.
+function discardArmedRecording() {
+  armed = false;
+  rearmBlocked = true;
+  discardingRecording = true;
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
 }
 
 function endUtterance() {
@@ -386,6 +493,14 @@ function handleResult(result, resolvingDisambiguation) {
     addLogEntry('Erreur Worker', result.erreur);
   }
 
+  // Ce que Gemini a cru entendre, mot à mot. Sans ça, un échec est une boîte
+  // noire : impossible de savoir si le nom a été mal entendu ou bien entendu
+  // puis mal associé — deux bugs opposés qui se corrigent à deux endroits
+  // différents. C'est la première chose à regarder dans le journal.
+  if (result.transcription) {
+    addLogEntry('Entendu', `« ${result.transcription} »`);
+  }
+
   if (result.commande === 'repete') {
     speak(lastSpokenText || templates.nonReconnu());
     return; // garde pendingDisambiguation intact : "répète" ne consomme pas le tour
@@ -398,11 +513,33 @@ function handleResult(result, resolvingDisambiguation) {
   }
 
   if (result.plante_id == null) {
-    if (!resolvingDisambiguation && Array.isArray(result.ambigus) && result.ambigus.length > 0) {
-      const pieces = [...new Set(result.ambigus.map((id) => findPlant(id)?.piece).filter(Boolean))];
-      if (pieces.length > 0) {
-        pendingDisambiguation = { candidateIds: result.ambigus, valeur: result.valeur, pourcentage: result.pourcentage };
-        speak(templates.ambiguite(pieces));
+    if (!resolvingDisambiguation && Array.isArray(result.ambigus)) {
+      // Les id renvoyés sont filtrés contre plants.json avant tout : un id
+      // inventé ajoutait sinon une option fantôme à la question posée, sans
+      // qu'aucune réponse ne puisse jamais y correspondre.
+      const proposes = [...new Set(result.ambigus)];
+      const candidats = proposes.map(findPlant).filter(Boolean);
+      if (candidats.length !== proposes.length) {
+        addLogEntry('Ambiguïté', `id inconnus ignorés : ${JSON.stringify(result.ambigus)}`);
+      }
+      if (candidats.length === 1) {
+        // Une seule option réelle : il n'y a plus rien à désambiguïser.
+        resoudrePlante({ ...result, plante_id: candidats[0].id }, valeurDeSecours, pourcentageDeSecours);
+        return;
+      }
+      if (candidats.length > 1) {
+        // La question se pose par pièce quand les pièces suffisent à
+        // distinguer les candidats. Deux plantes de la même pièce donnaient
+        // sinon un « Salon ? » auquel aucune réponse ne pouvait trancher.
+        const pieces = candidats.map((p) => p.piece);
+        const etiquettes = new Set(pieces).size === candidats.length ? pieces : candidats.map((p) => p.nom);
+        pendingDisambiguation = {
+          candidateIds: candidats.map((p) => p.id),
+          valeur: result.valeur,
+          pourcentage: result.pourcentage,
+        };
+        addLogEntry('Ambiguïté', etiquettes.join(' / '));
+        speak(templates.ambiguite(etiquettes));
         return;
       }
     }
@@ -414,6 +551,12 @@ function handleResult(result, resolvingDisambiguation) {
 }
 
 async function onUtteranceComplete() {
+  if (discardingRecording) {
+    discardingRecording = false;
+    recordedChunks = [];
+    return;
+  }
+
   const durationMs = performance.now() - utteranceStartedAt - SILENCE_DURATION_MS;
 
   if (durationMs < MIN_UTTERANCE_MS) {
@@ -473,6 +616,18 @@ stopBtn.addEventListener('click', () => {
   });
 });
 
+// Test du son isolé du reste de la chaîne : une phrase canée, déclenchée par
+// un vrai geste utilisateur, sans VAD ni Gemini. Si elle s'entend et qu'un
+// énoncé reconnu reste muet, le problème est en aval ; si elle est muette
+// elle aussi, il est dans la synthèse et rien d'autre n'est à déboguer.
+testVoiceBtn.addEventListener('click', () => {
+  statusSection.hidden = false;
+  statusSection.open = true; // la ligne « Voix » est le résultat du test
+  etatPrincipal.hidden = false;
+  pickFrenchVoice();
+  speak('Test du son. Si tu entends cette phrase, la voix fonctionne.');
+});
+
 // --- Démarrage (geste utilisateur unique) ---
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
@@ -480,6 +635,11 @@ startBtn.addEventListener('click', async () => {
   etatPrincipal.hidden = false;
   setEtat('en attente…', null);
   pickFrenchVoice();
+
+  // Amorçage de la synthèse dans le geste lui-même, avant tout await et avant
+  // getUserMedia — la seule fenêtre où iOS l'autorise à coup sûr. Sert aussi
+  // de confirmation audible que la session démarre.
+  speak('Ondée est prête.');
 
   await acquireWakeLock();
 

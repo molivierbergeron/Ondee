@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f6f4f0">
-<meta name="app-version" content="2026-08-04.12">
+<meta name="app-version" content="2026-08-04.13">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Ondee">
@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
 <title>Ondee</title>
-<link rel="stylesheet" href="style.css?v=2026-08-04.12">
+<link rel="stylesheet" href="style.css?v=2026-08-04.13">
 </head>
 <body>
   <main>
@@ -21,6 +21,10 @@
 
     <button id="start-btn">Démarrer</button>
     <button class="stop-btn" id="stop-btn" hidden>Terminer la session</button>
+    <!-- Hors du panneau « Détails techniques », qui est masqué tant que la
+         session n'a pas démarré : ce bouton doit justement rester utilisable
+         sans rien démarrer d'autre. -->
+    <button class="stop-btn" id="test-voice-btn">Tester le son</button>
 
     <p class="etat-principal" id="etat-principal" hidden>
       <span class="etat-point" id="etat-point"></span>
@@ -43,6 +47,10 @@
         <span class="status-label">État</span>
         <span class="status-value" id="status-vad">—</span>
       </div>
+      <div class="status-row">
+        <span class="status-label">Voix</span>
+        <span class="status-value" id="status-voice">—</span>
+      </div>
       <div class="energy-bar">
         <div class="energy-bar-fill" id="energy-fill"></div>
         <div class="energy-threshold" id="energy-threshold-marker"></div>
@@ -55,6 +63,6 @@
     <p class="version" id="version-tag"></p>
   </main>
 
-  <script type="module" src="app.js?v=2026-08-04.12"></script>
+  <script type="module" src="app.js?v=2026-08-04.13"></script>
 </body>
 </html>
