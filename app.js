@@ -3,7 +3,15 @@ const ENERGY_THRESHOLD = 0.02;      // RMS (0–1) au-delà duquel on considère
 const SILENCE_DURATION_MS = 1200;   // silence continu requis pour clore un énoncé
 const MIN_UTTERANCE_MS = 300;       // ignore les pics trop courts (bruit, frottement)
 const ENERGY_BLOCK_SAMPLES = 512;   // taille du bloc RMS calculé côté thread audio (plus petit = barre plus réactive)
-const TTS_WATCHDOG_MS = 8000;       // filet de sécurité si 'end' ne se déclenche pas (iOS, app en arrière-plan)
+
+// L'événement 'end' de speechSynthesis ne se déclenche pas de façon fiable
+// sur iOS quand un micro est actif en parallèle (bug WebKit connu). On
+// estime donc la durée de parole à partir du texte plutôt que d'attendre
+// cet événement — il ne sert plus que de raccourci si jamais il se déclenche.
+const SPEECH_CHARS_PER_SECOND = 13; // ~130 mots/min, rythme d'élocution FR normal
+const SPEECH_BASE_OVERHEAD_MS = 300; // latence de démarrage de la synthèse
+const SPEECH_TRAIL_BUFFER_MS = 200;  // marge avant de rouvrir l'écoute, pour ne pas capter la fin de sa propre voix
+const SPEECH_MAX_MS = 6000;          // plafond de sécurité si le texte est anormalement long
 
 // Le calcul d'énergie tourne dans un AudioWorklet (thread audio), pas dans
 // requestAnimationFrame : rAF s'arrête complètement dès que la page n'est
@@ -117,6 +125,11 @@ function endTtsSpeaking() {
   setStatus(statusVad, 'en attente…', null);
 }
 
+function estimateSpeechDurationMs(text) {
+  const estimate = SPEECH_BASE_OVERHEAD_MS + (text.length / SPEECH_CHARS_PER_SECOND) * 1000 + SPEECH_TRAIL_BUFFER_MS;
+  return Math.min(estimate, SPEECH_MAX_MS);
+}
+
 function speakTest(text) {
   speechSynthesis.cancel(); // vide toute file bloquée d'un essai précédent
 
@@ -126,10 +139,12 @@ function speakTest(text) {
   currentUtterance = utterance; // sans cette référence, WebKit peut GC l'objet et ne jamais émettre 'end'
   ttsSpeaking = true;
   setStatus(statusVad, 'réponse…', null);
+  // 'end'/'error' servent de raccourci s'ils se déclenchent, mais le timer
+  // estimé ci-dessous est ce qui referme réellement l'état dans la majorité
+  // des cas — voir la note sur la fiabilité de 'end' plus haut.
   utterance.addEventListener('end', endTtsSpeaking);
   utterance.addEventListener('error', endTtsSpeaking);
-  // Filet de sécurité : si 'end' ne se déclenche toujours pas.
-  ttsWatchdogId = setTimeout(endTtsSpeaking, TTS_WATCHDOG_MS);
+  ttsWatchdogId = setTimeout(endTtsSpeaking, estimateSpeechDurationMs(text));
   speechSynthesis.speak(utterance);
 }
 
