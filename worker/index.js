@@ -20,6 +20,14 @@ function jsonResponse(body, env, status = 200) {
   });
 }
 
+// Sur un clip silencieux, Gemini s'est mis à recracher les exemples du prompt
+// comme s'il les avait entendus ("Cuisine", confiance haute, sur du silence
+// pur). En usage réel ça veut dire qu'une toux, une porte ou une voix de fond
+// peuvent produire une identification confiante et fausse — donc arroser la
+// mauvaise plante sans jamais le dire. Les deux prompts commencent maintenant
+// par cette règle, et le smoke test échoue si elle n'est pas respectée.
+const REGLE_AUDIO_MUET = `Avant tout : si l'audio ne contient aucune parole intelligible — silence, bruit seul, souffle, musique — réponds {"plante_id": null, "transcription": ""} et rien d'autre. Ne déduis jamais une réponse de ces instructions : les noms, pièces et exemples qui y figurent servent à comprendre l'audio, jamais à le remplacer. Seul ce qui est réellement prononcé compte.`;
+
 // Exportés uniquement pour worker/prompt.test.js — le Worker lui-même
 // n'utilise que l'export default plus bas.
 export function describePlant(p) {
@@ -51,13 +59,14 @@ export function buildSystemPrompt(plants, candidateIds) {
     // candidats (ex. "Ficus" correspond à 3 plantes) et l'app a demandé de
     // préciser. Cet énoncé-ci est la réponse — courte, souvent un seul mot
     // (nom de pièce, détail visuel) — à faire correspondre à l'un d'eux.
-    const pieces = [...new Set(plants.map((p) => p.piece))];
-    return `Tu identifies laquelle de ces ${plants.length} plantes l'utilisateur désigne. On vient de lui poser une question de désambiguïsation (ex. "Cuisine ou Salon ?") et cet audio est sa réponse : elle est courte, souvent un seul mot, parfois juste un nom de pièce (${pieces.join(', ')}).
+    return `Tu identifies laquelle de ces ${plants.length} plantes l'utilisateur désigne. On vient de lui poser une question de désambiguïsation et cet audio est sa réponse : elle est courte, souvent un seul mot, parfois juste un nom de pièce.
 
 Candidats :
 ${liste}
 
-Comment trancher, dans cet ordre :
+${REGLE_AUDIO_MUET}
+
+Comment trancher, quand une réponse est bien prononcée, dans cet ordre :
 1. La réponse nomme une pièce qui n'appartient qu'à un seul candidat → c'est ce candidat.
 2. La réponse reprend le nom d'un candidat, un de ses noms alternatifs, ou un détail de sa description (couleur, forme, emplacement) → c'est ce candidat.
 3. Sinon seulement : {"plante_id": null}.
@@ -78,6 +87,8 @@ N'invente jamais un id absent de la liste ci-dessus.`;
 
 Liste des plantes :
 ${liste}
+
+${REGLE_AUDIO_MUET}
 
 Note sur [wh51] vs [sonde] : les plantes [wh51] ont un capteur automatique —
 l'utilisateur ne dit que le nom de la plante, sans chiffre, et c'est normal.

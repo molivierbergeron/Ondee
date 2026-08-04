@@ -223,6 +223,39 @@ bugs opposés qui se corrigent à deux endroits différents, et deux sessions on
 été passées à deviner lequel des deux était en cause. **C'est la première chose
 à regarder dans le journal au prochain test.**
 
+### Régression attrapée par le smoke test : hallucination sur audio muet
+
+Le premier déploiement de ces changements a produit ceci, sur le clip
+**silencieux** du smoke test :
+
+```
+POST /comprendre                 → {"ambigus":[1,2],"valeur":4,"transcription":"Sansevieria 4."}
+POST /comprendre?candidats=19,20 → {"plante_id":19,"confiance":"haute","transcription":"Cuisine"}
+```
+
+Il n'y a aucune parole dans ce fichier. Gemini recrachait les **exemples du
+prompt** comme s'il les avait entendus — « Cuisine » venait de l'exemple de
+question que j'y avais écrit (« Cuisine ou Salon ? »), « Sansevieria » de la
+liste des noms génériques. Avec `confiance: "haute"`.
+
+C'est une régression que j'ai introduite en rendant les prompts plus directifs
+(« dès qu'un seul candidat colle, réponds-le »), et elle est plus grave qu'elle
+n'en a l'air : en usage réel, une toux, une porte ou une voix de fond peuvent
+produire une identification **confiante et fausse**. Le mauvais arrosage
+silencieux, pas le « je n'ai pas reconnu » visible.
+
+Deux corrections :
+
+- Les deux prompts commencent maintenant par une règle explicite : aucun
+  discours intelligible → `{"plante_id": null}`, et les noms/pièces/exemples
+  des instructions servent à comprendre l'audio, jamais à le remplacer.
+  L'exemple de question parrotable a été retiré du prompt réduit.
+- **Le smoke test échoue désormais** si un clip silencieux renvoie une plante,
+  au lieu de simplement afficher la réponse. Idem pour l'auth (401 attendu) et
+  pour `/capteurs` (au moins une lecture). Une étape qui imprime sans vérifier
+  ne protège de rien — celle-ci imprimait déjà l'hallucination au déploiement
+  précédent, sans que rien ne s'en émeuve.
+
 ### Couverture de test
 
 `npm test` — 39 tests, dont 9 nouveaux sur le prompt et l'intégrité de

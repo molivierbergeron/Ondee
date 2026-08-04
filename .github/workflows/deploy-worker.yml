@@ -57,24 +57,46 @@ jobs:
       # Fumée : confirme depuis un runner (accès réseau normal, contrairement
       # à l'environnement de dev) que le Worker répond réellement et que
       # l'appel Ecowitt en aval fonctionne avec les vraies clés.
+      #
+      # Le clip silencieux n'est pas qu'un test de tuyauterie : il vérifie que
+      # Gemini répond bien « rien reconnu » sur un audio sans parole. Cette
+      # étape a déjà attrapé une régression réelle où il recrachait les
+      # exemples du prompt comme s'il les avait entendus, avec confiance
+      # « haute » — en usage réel, une identification fausse et silencieuse.
       - name: Vérifier le déploiement
         run: |
+          silence_doit_donner_null() {
+            echo "--- $1 ---"
+            corps=$(curl -sS \
+              -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
+              -H "Content-Type: audio/wav" \
+              --data-binary @fixtures/silence.wav \
+              "$2")
+            echo "$corps"
+            if [ "$(jq -r '.plante_id' <<< "$corps")" != "null" ]; then
+              echo "::error::Plante identifiée à partir d'un clip silencieux — hallucination, pas une reconnaissance."
+              return 1
+            fi
+          }
+
           echo "--- sans jeton (doit être 401) ---"
-          curl -sS -o /dev/null -w "HTTP %{http_code}\n" \
-            https://ondee-proxy.mo-bergeron.workers.dev/capteurs
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            https://ondee-proxy.mo-bergeron.workers.dev/capteurs)
+          echo "HTTP $code"
+          [ "$code" = "401" ] || { echo "::error::auth ouverte : $code au lieu de 401"; exit 1; }
+
           echo "--- GET /capteurs ---"
-          curl -sS -w "\nHTTP %{http_code}\n" \
+          capteurs=$(curl -sS \
             -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
-            https://ondee-proxy.mo-bergeron.workers.dev/capteurs
-          echo "--- POST /comprendre (silence — valide la tuyauterie Gemini, pas la reconnaissance) ---"
-          curl -sS -w "\nHTTP %{http_code}\n" \
-            -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
-            -H "Content-Type: audio/wav" \
-            --data-binary @fixtures/silence.wav \
-            https://ondee-proxy.mo-bergeron.workers.dev/comprendre
-          echo "--- POST /comprendre?candidats=19,20 (chemin désambiguïsation, jamais couvert jusqu'ici) ---"
-          curl -sS -w "\nHTTP %{http_code}\n" \
-            -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
-            -H "Content-Type: audio/wav" \
-            --data-binary @fixtures/silence.wav \
+            https://ondee-proxy.mo-bergeron.workers.dev/capteurs)
+          echo "$capteurs"
+          jq -e '.readings | length > 0' <<< "$capteurs" > /dev/null \
+            || { echo "::error::aucune lecture capteur"; exit 1; }
+
+          silence_doit_donner_null \
+            "POST /comprendre (silence)" \
+            "https://ondee-proxy.mo-bergeron.workers.dev/comprendre"
+
+          silence_doit_donner_null \
+            "POST /comprendre?candidats=19,20 (silence, chemin désambiguïsation)" \
             "https://ondee-proxy.mo-bergeron.workers.dev/comprendre?candidats=19,20"

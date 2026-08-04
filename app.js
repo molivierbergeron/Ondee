@@ -517,8 +517,9 @@ function handleResult(result, resolvingDisambiguation) {
       // Les id renvoyés sont filtrés contre plants.json avant tout : un id
       // inventé ajoutait sinon une option fantôme à la question posée, sans
       // qu'aucune réponse ne puisse jamais y correspondre.
-      const candidats = [...new Set(result.ambigus)].map(findPlant).filter(Boolean);
-      if (candidats.length !== (result.ambigus?.length ?? 0)) {
+      const proposes = [...new Set(result.ambigus)];
+      const candidats = proposes.map(findPlant).filter(Boolean);
+      if (candidats.length !== proposes.length) {
         addLogEntry('Ambiguïté', `id inconnus ignorés : ${JSON.stringify(result.ambigus)}`);
       }
       if (candidats.length === 1) {
