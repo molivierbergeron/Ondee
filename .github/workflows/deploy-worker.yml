@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - claude/plant-watering-voice-assistant-yq8f7x
+      - claude/new-session-qt68mr
       - main
     paths:
       - "worker/**"
+      - "plants.json"
       - ".github/workflows/deploy-worker.yml"
   workflow_dispatch:
 
@@ -24,6 +26,14 @@ jobs:
           node-version: 20
 
       - run: npm install
+
+      # Les tests du prompt tournent avant le déploiement : ils lisent
+      # plants.json et attrapent les erreurs de données (synonyme partagé par
+      # deux plantes, capteur assigné deux fois) avant qu'elles n'atteignent
+      # Gemini.
+      - name: Tests
+        working-directory: .
+        run: npm test
 
       - name: Déployer le Worker
         run: npx wrangler deploy
@@ -62,3 +72,9 @@ jobs:
             -H "Content-Type: audio/wav" \
             --data-binary @fixtures/silence.wav \
             https://ondee-proxy.mo-bergeron.workers.dev/comprendre
+          echo "--- POST /comprendre?candidats=19,20 (chemin désambiguïsation, jamais couvert jusqu'ici) ---"
+          curl -sS -w "\nHTTP %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
+            -H "Content-Type: audio/wav" \
+            --data-binary @fixtures/silence.wav \
+            "https://ondee-proxy.mo-bergeron.workers.dev/comprendre?candidats=19,20"

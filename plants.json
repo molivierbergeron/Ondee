@@ -2,6 +2,10 @@
   {
     "id": 1,
     "nom": "Sansevieria verte",
+    "noms_alternatifs": [
+      "sansevière verte",
+      "langue de belle-mère verte"
+    ],
     "piece": "Salon",
     "description": "tablette au-dessus du divan, longues feuilles vert foncé dressées",
     "source": "sonde",
@@ -14,6 +18,11 @@
   {
     "id": 2,
     "nom": "Sansevieria panachée jaune",
+    "noms_alternatifs": [
+      "Sansevieria trifasciata Laurentii",
+      "sansevière panachée",
+      "langue de belle-mère panachée"
+    ],
     "piece": "Bureau",
     "description": "feuilles dressées bordées de jaune",
     "source": "sonde",
@@ -26,6 +35,11 @@
   {
     "id": 3,
     "nom": "ZZ",
+    "noms_alternatifs": [
+      "Zamioculcas",
+      "Zamioculcas zamiifolia",
+      "plante ZZ"
+    ],
     "piece": "Salon",
     "description": "près de la fenêtre, feuilles épaisses vert foncé brillantes",
     "source": "sonde",
@@ -38,6 +52,10 @@
   {
     "id": 4,
     "nom": "Aloe vera",
+    "noms_alternatifs": [
+      "Aloe barbadensis",
+      "aloès"
+    ],
     "piece": "Salon",
     "description": "meuble à chaussures, rosette de feuilles épaisses dentelées",
     "source": "sonde",
@@ -50,6 +68,11 @@
   {
     "id": 5,
     "nom": "Haworthia",
+    "noms_alternatifs": [
+      "Haworthiopsis",
+      "Haworthia fasciata",
+      "plante zèbre"
+    ],
     "piece": "Salon",
     "description": "meuble à chaussures, petite rosette en spirale de feuilles pointues",
     "source": "sonde",
@@ -62,6 +85,11 @@
   {
     "id": 6,
     "nom": "Jade",
+    "noms_alternatifs": [
+      "Crassula ovata",
+      "crassula",
+      "arbre de jade"
+    ],
     "piece": "Salon",
     "description": "tablette au-dessus du divan, petites feuilles rondes et charnues",
     "source": "sonde",
@@ -74,6 +102,10 @@
   {
     "id": 7,
     "nom": "Gasteria",
+    "noms_alternatifs": [
+      "Gasteria maculata",
+      "langue de vache"
+    ],
     "piece": "Salon",
     "description": "tablette au-dessus du divan, feuilles épaisses mouchetées disposées en éventail",
     "source": "sonde",
@@ -86,6 +118,10 @@
   {
     "id": 8,
     "nom": "Pothos hawaïen",
+    "noms_alternatifs": [
+      "Epipremnum aureum Hawaiian",
+      "pothos hawaii"
+    ],
     "piece": "Salon",
     "description": "tablette au-dessus du divan, feuilles panachées vert et jaune",
     "source": "wh51",
@@ -98,6 +134,10 @@
   {
     "id": 9,
     "nom": "Pothos doré",
+    "noms_alternatifs": [
+      "Epipremnum aureum Golden",
+      "pothos golden"
+    ],
     "piece": "Chambre de Simone",
     "description": "tablette Crayola, feuilles vertes tachetées de jaune doré",
     "source": "sonde",
@@ -110,6 +150,10 @@
   {
     "id": 10,
     "nom": "Pothos marbré",
+    "noms_alternatifs": [
+      "Epipremnum aureum Marble Queen",
+      "pothos marble queen"
+    ],
     "piece": "Bureau",
     "description": "suspendu près de la fenêtre du bureau, feuilles panachées blanc et vert",
     "source": "sonde",
@@ -122,6 +166,11 @@
   {
     "id": 11,
     "nom": "Monstera",
+    "noms_alternatifs": [
+      "Monstera deliciosa",
+      "faux philodendron",
+      "plante gruyère"
+    ],
     "piece": "Salon",
     "description": "bout de la tablette vers la cuisine, grandes feuilles découpées",
     "source": "wh51",
@@ -134,6 +183,11 @@
   {
     "id": 12,
     "nom": "Ficus caoutchouc",
+    "noms_alternatifs": [
+      "Ficus elastica",
+      "figuier élastique",
+      "caoutchouc"
+    ],
     "piece": "Salon",
     "description": "près de la fenêtre au sol, grandes feuilles ovales bordeaux brillantes",
     "source": "sonde",
@@ -146,6 +200,11 @@
   {
     "id": 13,
     "nom": "Ficus pleureur",
+    "noms_alternatifs": [
+      "Ficus benjamina",
+      "benjamina",
+      "figuier pleureur"
+    ],
     "piece": "Cuisine",
     "description": "coin cuisine et salle à manger, ne pas déplacer, petites feuilles retombantes",
     "source": "wh51",
@@ -158,6 +217,11 @@
   {
     "id": 14,
     "nom": "Ficus lyre",
+    "noms_alternatifs": [
+      "Ficus lyrata",
+      "lyrata",
+      "figuier lyre"
+    ],
     "piece": "Bureau",
     "description": "grandes feuilles en forme de violon",
     "source": "wh51",
@@ -170,6 +234,10 @@
   {
     "id": 15,
     "nom": "Dracaena",
+    "noms_alternatifs": [
+      "Dracaena marginata",
+      "dragonnier"
+    ],
     "piece": "Cuisine",
     "description": "près du buffet, longues feuilles étroites en bouquet, eau filtrée",
     "source": "sonde",
@@ -182,6 +250,10 @@
   {
     "id": 16,
     "nom": "Croton",
+    "noms_alternatifs": [
+      "Codiaeum variegatum",
+      "codiaeum"
+    ],
     "piece": "Bureau",
     "description": "feuilles colorées jaune, orange et vert",
     "source": "wh51",
@@ -194,6 +266,11 @@
   {
     "id": 17,
     "nom": "Plante-araignée",
+    "noms_alternatifs": [
+      "Chlorophytum comosum",
+      "chlorophytum",
+      "phalangère"
+    ],
     "piece": "Chambre de Simone",
     "description": "macramé suspendu, longues feuilles rubanées avec pousses retombantes, eau filtrée",
     "source": "sonde",
@@ -206,6 +283,10 @@
   {
     "id": 18,
     "nom": "Hypoestes",
+    "noms_alternatifs": [
+      "Hypoestes phyllostachya",
+      "plante à taches roses"
+    ],
     "piece": "Chambre de Simone",
     "description": "petites feuilles vertes mouchetées de picots roses",
     "source": "sonde",
@@ -218,6 +299,10 @@
   {
     "id": 19,
     "nom": "Calathea White Star",
+    "noms_alternatifs": [
+      "Calathea majestica White Star",
+      "Goeppertia White Star"
+    ],
     "piece": "Cuisine",
     "description": "près du buffet à côté du Dracaena, feuilles à lignes blanches, eau filtrée",
     "source": "wh51",
@@ -230,6 +315,11 @@
   {
     "id": 20,
     "nom": "Calathea lignes roses",
+    "noms_alternatifs": [
+      "Calathea ornata",
+      "Goeppertia ornata",
+      "Calathea pinstripe"
+    ],
     "piece": "Salon",
     "description": "tablette au-dessus du divan, feuilles à lignes roses, eau filtrée",
     "source": "sonde",

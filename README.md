@@ -103,6 +103,141 @@ La forme supposée (`data.data.soil_chN.soilmoisture.value`) était la bonne : v
 - Dernière réponse affichée en gros sous le bouton, en plus du journal détaillé.
 - Accès guidé et édition du JSON déjà documentés dans ce README (Phase 0 et Phase 1).
 
+## Phase 6 — Reprise après la première tournée vocale réelle
+
+La première vraie tournée à la voix a échoué sur quatre points. Ce qui suit dit
+pour chacun ce qui a été corrigé, et surtout **ce qui est prouvé contre ce qui
+n'est qu'une hypothèse plausible** — la distinction a manqué à la session
+précédente, où des changements « corrects à la relecture » ont cassé la prod.
+
+### 1. Aucun son, jamais (priorité absolue)
+
+Relire le code n'a pas suffi à trancher, et la comparaison avec la Phase 0 —
+seul état confirmé audible — dit quelque chose d'utile : à la Phase 0 aussi,
+`speak()` était appelé hors geste utilisateur, donc **l'hypothèse « iOS exige
+un geste » n'explique pas à elle seule la régression**. Le seul écart réel
+entre les deux versions est le `speechSynthesis.cancel()` ajouté juste avant
+`speak()`.
+
+Trois causes restent possibles et aucune n'est distinguable des autres sans
+l'appareil. Elles sont donc traitées ensemble :
+
+1. **`cancel()` immédiatement suivi de `speak()`** — WebKit laisse sa file
+   dans un état intermédiaire et avale l'énoncé. On ne coupe plus que s'il y a
+   vraiment quelque chose à couper, et on laisse alors un tour de boucle avant
+   de reparler. *C'est la cause la plus probable : c'est la seule différence
+   avec l'état audible connu.*
+2. **Session audio iOS** — une fois `getUserMedia` actif, la sortie de la
+   synthèse peut être coupée. La synthèse est maintenant amorcée dans le geste
+   « Démarrer » lui-même, avant tout `await` et avant le micro (« Ondée est
+   prête. »).
+3. **Interrupteur silencieux / volume** — Safari respecte l'interrupteur
+   physique pour `speechSynthesis`, sans erreur JS. **À vérifier sur le
+   téléphone avant tout le reste.**
+
+Et parce qu'aucune de ces trois n'est prouvée, un témoin a été ajouté pour
+trancher au prochain test, au lieu de tourner en rond une session de plus :
+
+- **Bouton « Tester le son »**, visible sans démarrer de session : une phrase
+  canée, sans VAD ni Gemini. S'il est muet, le problème est dans la synthèse
+  et rien d'autre n'est à déboguer.
+- **Ligne « Voix »** dans les détails techniques, alimentée par les vrais
+  événements :
+  - `parle · <nom de voix>` → l'API a bien démarré. Si rien ne s'entend
+    malgré ça, c'est le matériel : interrupteur silencieux, volume, ou routage
+    AirPods. **Pas un bug JS.**
+  - `aucun son émis par l'API` → `speak()` n'a rien lancé du tout. Là c'est
+    bien le code (ou iOS qui le bloque), et ce n'est pas une question de
+    volume.
+  - `erreur: <raison>` → la synthèse a échoué explicitement.
+
+**Statut : non prouvé.** Le silence ne peut être confirmé résolu que par toi,
+sur le téléphone. Le témoin est là pour que, s'il persiste, la prochaine
+session parte d'un fait et non d'une quatrième hypothèse.
+
+### 2. « Ficus lyrata » jamais reconnu — corrigé, cause confirmée
+
+L'hypothèse du brief de reprise était la bonne : `plants.json` ne contenait que
+les noms français (« Ficus lyre »), jamais les noms latins que tu prononces.
+Gemini ne pouvait pas faire le lien sans deviner, et le prompt lui interdisait
+justement de deviner.
+
+Chaque plante porte maintenant un champ `noms_alternatifs` (nom latin +
+synonymes courants), repris dans le prompt sous forme de « aussi appelé », avec
+la consigne explicite que **le nom latin vaut le nom français**. Les synonymes
+sont volontairement *distinctifs* : « Epipremnum aureum » seul n'est attribué à
+aucun Pothos en particulier, sinon un nom d'espèce partagé par trois plantes en
+désignerait une seule à tort.
+
+Deux tests verrouillent ça (`worker/prompt.test.js`) : aucun synonyme n'est
+partagé par deux plantes, et aucun ne reprend le nom principal d'une autre.
+
+### 3. La « 3e option » du Calathea — cause trouvée
+
+Le prompt annonçait en dur : *« "Pothos" correspond à 4 plantes »*. **Il n'y en
+a que 3.** Un décompte faux écrit à la main, jamais remis à jour. Rien ne
+garantit que c'est ce que tu as entendu, mais c'était une invitation directe à
+compter un candidat qui n'existe pas.
+
+Ces décomptes sont maintenant **calculés depuis `plants.json`** au lieu d'être
+écrits en dur, avec un test qui les vérifie. Côté client, les id renvoyés dans
+`ambigus` sont filtrés contre `plants.json` avant de poser la question : un id
+inventé ajoutait sinon une option fantôme à laquelle aucune réponse ne pouvait
+correspondre. S'il ne reste qu'un candidat réel après filtrage, la question
+n'est plus posée du tout.
+
+Autre défaut trouvé au passage : la question ne citait que les **pièces**. Deux
+plantes de la même pièce donnaient un « Salon ? » indécidable. La question se
+pose maintenant par nom de plante dès que les pièces ne suffisent pas à
+distinguer les candidats.
+
+### 4. Répondre « cuisine » échouait — deux corrections, aucune prouvée
+
+Le tour de désambiguïsation n'a jamais été confirmé fonctionnel par un vrai
+test vocal. Deux causes plausibles, corrigées toutes les deux :
+
+- **L'audio était tronqué.** L'enregistrement ne démarrait qu'une fois
+  `ENERGY_THRESHOLD` franchi, donc *après* l'attaque du mot. Une consonne
+  sourde — le « c » de « cuisine » — reste sous le seuil 100 à 200 ms et se
+  faisait couper. Sur une phrase, sans importance ; sur une réponse d'un seul
+  mot, il ne reste plus grand-chose à reconnaître. Le magnétophone s'arme
+  maintenant à un seuil bien plus bas (`ENERGY_PREARM_THRESHOLD`) et on décide
+  seulement après coup si ce qui a été capté était un énoncé ou du bruit à
+  jeter. *Cette correction bénéficie à toute la reconnaissance, pas seulement
+  à la désambiguïsation.*
+- **Le prompt réduit était trop prudent.** Il héritait du « ne devine jamais »
+  du prompt principal alors que la liste est déjà réduite aux candidats et que
+  l'utilisateur vient de répondre à la question. Il donne maintenant un ordre
+  de résolution explicite (pièce unique → nom/synonyme/détail → null) et dit
+  qu'un seul candidat qui colle suffit.
+
+### La correction la plus utile des cinq : voir ce que Gemini a entendu
+
+Gemini renvoie maintenant un champ `transcription` — mot à mot ce qu'il a cru
+entendre — journalisé sous « Entendu » à chaque énoncé.
+
+Jusqu'ici un échec était une boîte noire : impossible de savoir si le nom avait
+été **mal entendu** (problème d'audio : VAD, micro, troncature) ou **bien
+entendu puis mal associé** (problème de prompt ou de données). Ce sont deux
+bugs opposés qui se corrigent à deux endroits différents, et deux sessions ont
+été passées à deviner lequel des deux était en cause. **C'est la première chose
+à regarder dans le journal au prochain test.**
+
+### Couverture de test
+
+`npm test` — 39 tests, dont 9 nouveaux sur le prompt et l'intégrité de
+`plants.json` (synonymes non ambigus, décomptes génériques exacts, cohérence
+`source`/`capteur_id`). Ils tournent maintenant **sur tout push**
+(`.github/workflows/tests.yml`), pas seulement quand `worker/` change :
+`plants.json` et `logic.js` cassent la reconnaissance aussi sûrement que le
+Worker. Le smoke test réseau réel couvre en plus le chemin
+`?candidats=` (désambiguïsation), qui n'était jamais exercé en CI.
+
+Ce que les tests **ne** couvrent pas, et ne peuvent pas couvrir ici : la
+synthèse vocale (pas de navigateur en CI), et la reconnaissance sur une vraie
+voix (pas d'enregistrement de référence). Ces deux-là ne se valident que sur
+l'appareil.
+
 ## Déploiement du Worker
 
 ### Voie recommandée : GitHub Actions (aucun terminal requis)

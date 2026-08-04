@@ -20,29 +20,58 @@ function jsonResponse(body, env, status = 200) {
   });
 }
 
-function buildSystemPrompt(plants, candidateIds) {
-  const liste = plants
-    .map((p) => `- id ${p.id} : ${p.nom} (${p.piece}) — ${p.description} [${p.source}]`)
-    .join('\n');
+// Exportés uniquement pour worker/prompt.test.js — le Worker lui-même
+// n'utilise que l'export default plus bas.
+export function describePlant(p) {
+  const alias = p.noms_alternatifs?.length ? ` (aussi appelé : ${p.noms_alternatifs.join(', ')})` : '';
+  return `- id ${p.id} : ${p.nom}${alias} — ${p.piece} — ${p.description} [${p.source}]`;
+}
+
+// Les noms génériques réellement partagés, calculés depuis la liste plutôt
+// qu'écrits en dur : la version en dur annonçait "Pothos correspond à 4
+// plantes" alors qu'il n'y en a que 3, ce qui invitait Gemini à compter un
+// candidat qui n'existe pas.
+export function genericNameGroups(plants) {
+  const groups = new Map();
+  for (const p of plants) {
+    const premier = p.nom.split(' ')[0];
+    if (!groups.has(premier)) groups.set(premier, []);
+    groups.get(premier).push(p);
+  }
+  return [...groups.entries()]
+    .filter(([, list]) => list.length > 1)
+    .map(([nom, list]) => `« ${nom} » correspond à ${list.length} plantes (id ${list.map((p) => p.id).join(', ')})`);
+}
+
+export function buildSystemPrompt(plants, candidateIds) {
+  const liste = plants.map(describePlant).join('\n');
 
   if (candidateIds) {
     // Tour de désambiguïsation : l'énoncé précédent avait identifié plusieurs
     // candidats (ex. "Ficus" correspond à 3 plantes) et l'app a demandé de
     // préciser. Cet énoncé-ci est la réponse — courte, souvent un seul mot
     // (nom de pièce, détail visuel) — à faire correspondre à l'un d'eux.
-    return `Tu identifies laquelle de ces plantes l'utilisateur désigne, en réponse à une question de désambiguïsation qu'on vient de lui poser (ex. "Salon, chambre, ou bureau ?"). Sa réponse est courte, parfois un seul mot.
+    const pieces = [...new Set(plants.map((p) => p.piece))];
+    return `Tu identifies laquelle de ces ${plants.length} plantes l'utilisateur désigne. On vient de lui poser une question de désambiguïsation (ex. "Cuisine ou Salon ?") et cet audio est sa réponse : elle est courte, souvent un seul mot, parfois juste un nom de pièce (${pieces.join(', ')}).
 
 Candidats :
 ${liste}
 
+Comment trancher, dans cet ordre :
+1. La réponse nomme une pièce qui n'appartient qu'à un seul candidat → c'est ce candidat.
+2. La réponse reprend le nom d'un candidat, un de ses noms alternatifs, ou un détail de sa description (couleur, forme, emplacement) → c'est ce candidat.
+3. Sinon seulement : {"plante_id": null}.
+
+La liste est déjà réduite aux seuls candidats plausibles et l'utilisateur vient de répondre à la question : dès qu'un seul candidat colle, réponds-le. Ne renvoie null que si la réponse ne désigne vraiment aucun d'eux ou en désigne plusieurs.
+
 Si une valeur numérique est énoncée avec "%" ou "pour cent", ajoute "pourcentage": true.
 
-Règles de sortie, JSON strict uniquement, sans texte autour :
-- Commande "répète" : {"commande": "repete"}
-- Un des candidats correspond clairement à la réponse (pièce, détail) : {"plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "confiance": "haute"|"moyenne"}
-- Toujours ambigu, ou aucun candidat ne correspond à la réponse : {"plante_id": null}
+Règles de sortie, JSON strict uniquement, sans texte autour. Dans tous les cas, inclus "transcription": "<ce que tu as entendu, mot à mot>".
+- Commande "répète" : {"commande": "repete", "transcription": "..."}
+- Un candidat correspond : {"plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "confiance": "haute"|"moyenne", "transcription": "..."}
+- Aucun candidat ne correspond, ou plusieurs correspondent également : {"plante_id": null, "transcription": "..."}
 
-Ne choisis jamais un candidat au hasard si la réponse ne permet pas de trancher.`;
+N'invente jamais un id absent de la liste ci-dessus.`;
   }
 
   return `Tu identifies une plante d'intérieur et extrais une lecture d'humidité à partir d'un énoncé vocal en français, prononcé par une seule personne faisant sa tournée d'arrosage.
@@ -61,19 +90,33 @@ cent" ou "22%") — dans ce cas, ajoute "pourcentage": true dans la sortie.
 Sans "%", ni "pour cent" explicitement énoncé, ne mets pas ce champ (défaut :
 échelle 0 à 10).
 
-Attention aux noms génériques partagés par plusieurs plantes de la liste
-(ex. "Ficus" correspond à 3 plantes différentes, "Calathea" à 2, "Pothos" à
-4, "Sansevieria" à 2) : si l'énoncé ne précise pas assez pour distinguer
-laquelle, c'est une ambiguïté à signaler, pas un match à deviner.
+Les "aussi appelé" sont des synonymes de plein droit — surtout les noms
+latins, que l'utilisateur emploie couramment à la place du nom français.
+"Ficus lyrata" désigne exactement la même plante que "Ficus lyre", sans plus
+de doute que si le nom français avait été prononcé : traite-les à égalité,
+n'exige pas le nom français.
 
-Règles de sortie, JSON strict uniquement, sans texte autour :
-- Commande "répète" (ou équivalent proche, ex. "répète ça") : {"commande": "repete"}
-- Plante [sonde] identifiée sans ambiguïté (nom précis, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "pourcentage": true|absent, "confiance": "haute"|"moyenne"}
-- Plante [wh51] identifiée sans ambiguïté, avec ou sans valeur énoncée : {"plante_id": <id>, "confiance": "haute"|"moyenne"} (ajoute "valeur" seulement si un chiffre a été dit)
-- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent}
-- Aucune plante ne correspond, ou une plante [sonde] est nommée sans valeur : {"plante_id": null}
+Attention en revanche aux noms génériques réellement partagés par plusieurs
+plantes de la liste :
+${genericNameGroups(plants).map((g) => `- ${g}`).join('\n')}
+Si l'énoncé s'arrête à ce nom générique sans rien qui distingue laquelle,
+c'est une ambiguïté à signaler, pas un match à deviner. Mais dès que
+l'énoncé ajoute de quoi trancher (nom complet, nom latin, pièce, couleur,
+emplacement), il n'y a plus d'ambiguïté : réponds la plante.
 
-Ne devine jamais une plante en cas de doute : préfère l'ambiguïté ou le non-reconnu à une identification incertaine.`;
+Règles de sortie, JSON strict uniquement, sans texte autour. Dans tous les cas, inclus "transcription": "<ce que tu as entendu, mot à mot>".
+- Commande "répète" (ou équivalent proche, ex. "répète ça") : {"commande": "repete", "transcription": "..."}
+- Plante [sonde] identifiée sans ambiguïté (nom précis, nom latin, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "pourcentage": true|absent, "confiance": "haute"|"moyenne", "transcription": "..."}
+- Plante [wh51] identifiée sans ambiguïté, avec ou sans valeur énoncée : {"plante_id": <id>, "confiance": "haute"|"moyenne", "transcription": "..."} (ajoute "valeur" seulement si un chiffre a été dit)
+- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "transcription": "..."}
+- Aucune plante ne correspond, ou une plante [sonde] est nommée sans valeur : {"plante_id": null, "transcription": "..."}
+
+Ne mets dans "ambigus" que des id présents dans la liste ci-dessus, et
+seulement ceux qui correspondent vraiment à l'énoncé — jamais de candidat
+ajouté par précaution.
+
+Ne devine jamais entre plusieurs plantes qui collent également bien :
+préfère l'ambiguïté ou le non-reconnu à une identification au hasard.`;
 }
 
 function base64FromArrayBuffer(buffer) {

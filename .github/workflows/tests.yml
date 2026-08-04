@@ -1,0 +1,20 @@
+# Les tests unitaires tournent sur tout push, pas seulement quand `worker/`
+# change : `plants.json` et `logic.js` sont hors de ce dossier et cassent la
+# reconnaissance ou le verdict aussi sûrement que le Worker lui-même.
+# Aucun secret, aucun appel réseau — le smoke test réel reste dans
+# deploy-worker.yml.
+name: Tests
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm test
