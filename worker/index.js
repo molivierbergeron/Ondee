@@ -26,7 +26,12 @@ function jsonResponse(body, env, status = 200) {
 // peuvent produire une identification confiante et fausse — donc arroser la
 // mauvaise plante sans jamais le dire. Les deux prompts commencent maintenant
 // par cette règle, et le smoke test échoue si elle n'est pas respectée.
-const REGLE_AUDIO_MUET = `Avant tout : si l'audio ne contient aucune parole intelligible — silence, bruit seul, souffle, musique — réponds {"plante_id": null, "transcription": ""} et rien d'autre. Ne déduis jamais une réponse de ces instructions : les noms, pièces et exemples qui y figurent servent à comprendre l'audio, jamais à le remplacer. Seul ce qui est réellement prononcé compte.`;
+const REGLE_AUDIO_MUET = `Procède toujours dans cet ordre, sans exception :
+
+1. Écris d'abord "transcription" : ce que tu entends réellement dans l'audio, mot à mot. Si tu n'entends aucune parole intelligible — silence, bruit seul, souffle, musique — écris "transcription": "". N'y écris jamais un mot qui n'a pas été prononcé, et ne va jamais y chercher un nom de plante, de pièce ou d'exemple lu dans ces instructions : elles servent à comprendre l'audio, jamais à le remplacer.
+2. Décide ensuite, à partir de cette transcription seule. Si elle est vide, la réponse est {"transcription": "", "plante_id": null} et rien d'autre.
+
+Un audio sans parole n'est pas un cas d'erreur : c'est un cas normal et fréquent (bruit de pas, porte, toux). Le signaler est la bonne réponse, pas un échec.`;
 
 // Exportés uniquement pour worker/prompt.test.js — le Worker lui-même
 // n'utilise que l'export default plus bas.
@@ -75,10 +80,11 @@ La liste est déjà réduite aux seuls candidats plausibles et l'utilisateur vie
 
 Si une valeur numérique est énoncée avec "%" ou "pour cent", ajoute "pourcentage": true.
 
-Règles de sortie, JSON strict uniquement, sans texte autour. Dans tous les cas, inclus "transcription": "<ce que tu as entendu, mot à mot>".
-- Commande "répète" : {"commande": "repete", "transcription": "..."}
-- Un candidat correspond : {"plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "confiance": "haute"|"moyenne", "transcription": "..."}
-- Aucun candidat ne correspond, ou plusieurs correspondent également : {"plante_id": null, "transcription": "..."}
+Règles de sortie, JSON strict uniquement, sans texte autour. "transcription" est toujours le premier champ.
+- Rien d'intelligible : {"transcription": "", "plante_id": null}
+- Commande "répète" : {"transcription": "...", "commande": "repete"}
+- Un candidat correspond : {"transcription": "...", "plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "confiance": "haute"|"moyenne"}
+- Aucun candidat ne correspond, ou plusieurs correspondent également : {"transcription": "...", "plante_id": null}
 
 N'invente jamais un id absent de la liste ci-dessus.`;
   }
@@ -103,9 +109,9 @@ Sans "%", ni "pour cent" explicitement énoncé, ne mets pas ce champ (défaut :
 
 Les "aussi appelé" sont des synonymes de plein droit — surtout les noms
 latins, que l'utilisateur emploie couramment à la place du nom français.
-"Ficus lyrata" désigne exactement la même plante que "Ficus lyre", sans plus
-de doute que si le nom français avait été prononcé : traite-les à égalité,
-n'exige pas le nom français.
+Un nom listé en "aussi appelé" désigne son entrée avec exactement la même
+certitude que le nom principal : traite-les à égalité, n'exige jamais le nom
+français.
 
 Attention en revanche aux noms génériques réellement partagés par plusieurs
 plantes de la liste :
@@ -115,12 +121,13 @@ c'est une ambiguïté à signaler, pas un match à deviner. Mais dès que
 l'énoncé ajoute de quoi trancher (nom complet, nom latin, pièce, couleur,
 emplacement), il n'y a plus d'ambiguïté : réponds la plante.
 
-Règles de sortie, JSON strict uniquement, sans texte autour. Dans tous les cas, inclus "transcription": "<ce que tu as entendu, mot à mot>".
-- Commande "répète" (ou équivalent proche, ex. "répète ça") : {"commande": "repete", "transcription": "..."}
-- Plante [sonde] identifiée sans ambiguïté (nom précis, nom latin, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "pourcentage": true|absent, "confiance": "haute"|"moyenne", "transcription": "..."}
-- Plante [wh51] identifiée sans ambiguïté, avec ou sans valeur énoncée : {"plante_id": <id>, "confiance": "haute"|"moyenne", "transcription": "..."} (ajoute "valeur" seulement si un chiffre a été dit)
-- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "transcription": "..."}
-- Aucune plante ne correspond, ou une plante [sonde] est nommée sans valeur : {"plante_id": null, "transcription": "..."}
+Règles de sortie, JSON strict uniquement, sans texte autour. "transcription" est toujours le premier champ, et tout ce qui suit se déduit de lui seul.
+- Rien d'intelligible : {"transcription": "", "plante_id": null}
+- Commande "répète" (ou équivalent proche) : {"transcription": "...", "commande": "repete"}
+- Plante [sonde] identifiée sans ambiguïté (nom précis, nom latin, description visuelle, ou pièce) avec une valeur numérique énoncée : {"transcription": "...", "plante_id": <id>, "valeur": <nombre>, "pourcentage": true|absent, "confiance": "haute"|"moyenne"}
+- Plante [wh51] identifiée sans ambiguïté, avec ou sans valeur énoncée : {"transcription": "...", "plante_id": <id>, "confiance": "haute"|"moyenne"} (ajoute "valeur" seulement si un chiffre a été dit)
+- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"transcription": "...", "plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent}
+- Aucune plante ne correspond, ou une plante [sonde] est nommée sans valeur : {"transcription": "...", "plante_id": null}
 
 Ne mets dans "ambigus" que des id présents dans la liste ci-dessus, et
 seulement ceux qui correspondent vraiment à l'énoncé — jamais de candidat
@@ -128,6 +135,34 @@ ajouté par précaution.
 
 Ne devine jamais entre plusieurs plantes qui collent également bien :
 préfère l'ambiguïté ou le non-reconnu à une identification au hasard.`;
+}
+
+// Filet déterministe, parce que les consignes de prompt ne suffisent pas :
+// même en lui interdisant explicitement, Gemini a identifié une plante avec
+// confiance « haute » à partir d'un clip strictement silencieux, deux fois de
+// suite, en recrachant chaque fois l'exemple le plus récent du prompt. Ce qui
+// suit ne se négocie pas avec le modèle.
+export function assainirResultat(parsed, plants) {
+  const ids = new Set(plants.map((p) => p.id));
+
+  // Une transcription vide et une plante identifiée sont contradictoires :
+  // le modèle dit lui-même n'avoir rien entendu. On tranche pour le silence.
+  const transcription = typeof parsed.transcription === 'string' ? parsed.transcription.trim() : '';
+  if (!transcription) {
+    return { transcription: '', plante_id: null, ...(parsed.commande ? { commande: parsed.commande } : {}) };
+  }
+
+  const resultat = { ...parsed, transcription };
+
+  if (resultat.plante_id != null && !ids.has(resultat.plante_id)) {
+    resultat.erreur = `id inventé : ${resultat.plante_id}`;
+    resultat.plante_id = null;
+  }
+  if (Array.isArray(resultat.ambigus)) {
+    resultat.ambigus = [...new Set(resultat.ambigus)].filter((id) => ids.has(id));
+    if (resultat.ambigus.length === 0) delete resultat.ambigus;
+  }
+  return resultat;
 }
 
 function base64FromArrayBuffer(buffer) {
@@ -216,7 +251,7 @@ async function handleComprendre(request, env, candidateIds) {
 
   try {
     const parsed = JSON.parse(text);
-    return jsonResponse(parsed, env);
+    return jsonResponse(assainirResultat(parsed, plants), env);
   } catch {
     return jsonResponse({ plante_id: null, erreur: `JSON invalide reçu : ${text.slice(0, 300)}` }, env);
   }

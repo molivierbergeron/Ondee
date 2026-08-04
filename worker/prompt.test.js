@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildSystemPrompt, genericNameGroups, describePlant } from './index.js';
+import { buildSystemPrompt, genericNameGroups, describePlant, assainirResultat } from './index.js';
 
 const plants = JSON.parse(readFileSync(new URL('../plants.json', import.meta.url)));
 
@@ -68,9 +68,65 @@ test('le prompt de désambiguïsation ne parle que des candidats', () => {
   assert.ok(prompt.includes('Cuisine') && prompt.includes('Salon'));
 });
 
-test('les deux prompts réclament une transcription', () => {
-  assert.ok(buildSystemPrompt(plants, null).includes('"transcription"'));
-  assert.ok(buildSystemPrompt(plants.slice(0, 2), [1, 2]).includes('"transcription"'));
+// « transcription » doit précéder « plante_id » dans chaque forme de sortie :
+// en mode JSON, le modèle génère les champs dans l'ordre annoncé, donc s'il
+// écrit plante_id en premier il choisit la plante AVANT de transcrire, puis
+// rédige une transcription qui justifie son choix. C'est exactement ce qu'on a
+// observé sur le clip silencieux.
+test('les deux prompts font écrire la transcription avant la décision', () => {
+  for (const prompt of [buildSystemPrompt(plants, null), buildSystemPrompt(plants.slice(0, 2), [1, 2])]) {
+    assert.ok(prompt.includes('"transcription"'));
+    for (const ligne of prompt.split('\n').filter((l) => l.includes('{"'))) {
+      const posTranscription = ligne.indexOf('"transcription"');
+      const posPlante = ligne.indexOf('"plante_id"');
+      if (posTranscription !== -1 && posPlante !== -1) {
+        assert.ok(posTranscription < posPlante, `plante_id avant transcription : ${ligne}`);
+      }
+    }
+  }
+});
+
+// Les consignes de prompt n'ont pas suffi : Gemini a identifié une plante,
+// confiance « haute », sur un clip strictement silencieux, deux fois de suite.
+// Ces garde-fous-là sont du code, pas des instructions.
+test('transcription vide force plante_id à null', () => {
+  const r = assainirResultat({ plante_id: 14, confiance: 'haute', transcription: '' }, plants);
+  assert.equal(r.plante_id, null);
+  assert.equal(r.transcription, '');
+  assert.equal(r.confiance, undefined, 'une confiance survivante ferait croire à une vraie reconnaissance');
+});
+
+test('transcription absente ou blanche est traitée comme vide', () => {
+  assert.equal(assainirResultat({ plante_id: 14 }, plants).plante_id, null);
+  assert.equal(assainirResultat({ plante_id: 14, transcription: '   ' }, plants).plante_id, null);
+});
+
+test('un id inventé est rejeté au lieu d’être renvoyé au client', () => {
+  const r = assainirResultat({ plante_id: 99, transcription: 'quelque chose' }, plants);
+  assert.equal(r.plante_id, null);
+  assert.match(r.erreur, /id inventé : 99/);
+});
+
+test('les id inconnus ou répétés sont retirés de ambigus', () => {
+  const r = assainirResultat({ plante_id: null, ambigus: [12, 12, 99, 13], transcription: 'ficus' }, plants);
+  assert.deepEqual(r.ambigus, [12, 13]);
+});
+
+test('un ambigus entièrement inventé disparaît au lieu de poser une question sans réponse', () => {
+  const r = assainirResultat({ plante_id: null, ambigus: [98, 99], transcription: 'ficus' }, plants);
+  assert.equal(r.ambigus, undefined);
+});
+
+test('un résultat valide traverse intact', () => {
+  const r = assainirResultat({ plante_id: 14, confiance: 'haute', transcription: 'Ficus lyrata' }, plants);
+  assert.equal(r.plante_id, 14);
+  assert.equal(r.confiance, 'haute');
+  assert.equal(r.transcription, 'Ficus lyrata');
+});
+
+test('la commande répète survit à une transcription vide', () => {
+  const r = assainirResultat({ commande: 'repete', transcription: '' }, plants);
+  assert.equal(r.commande, 'repete');
 });
 
 test('chaque plante décrite porte sa pièce, sa source et ses synonymes', () => {
