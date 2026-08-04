@@ -99,6 +99,35 @@ test('garde-fou : 100 est valide', () => {
   assert.notEqual(verdict.type, 'hors_limite');
 });
 
+// --- Sonde dictée en pourcentage explicite ("vingt-deux pour cent") ---
+
+test('sonde + pourcentageExplicite : 22 nest pas hors limite', () => {
+  const verdict = computeVerdict({ source: 'sonde', valeur: 22, humiditeMin: 25, taillePot: 'moyen', regime: 'mesure', pourcentageExplicite: true });
+  assert.notEqual(verdict.type, 'hors_limite');
+});
+
+test('sonde + pourcentageExplicite : pas de multiplication par 10', () => {
+  const verdict = computeVerdict({ source: 'sonde', valeur: 22, humiditeMin: 25, taillePot: 'moyen', regime: 'mesure', pourcentageExplicite: true });
+  assert.equal(verdict.lectureNorm, 22);
+});
+
+test('sonde + pourcentageExplicite : garde-fou > 100 sapplique quand meme', () => {
+  const verdict = computeVerdict({ source: 'sonde', valeur: 101, humiditeMin: 25, taillePot: 'moyen', regime: 'mesure', pourcentageExplicite: true });
+  assert.equal(verdict.type, 'hors_limite');
+});
+
+test('sonde sans pourcentageExplicite : comportement 0-10 inchange', () => {
+  const verdict = computeVerdict({ source: 'sonde', valeur: 22, humiditeMin: 25, taillePot: 'moyen', regime: 'mesure' });
+  assert.equal(verdict.type, 'hors_limite'); // 22 > 10 sur l'echelle du cadran
+});
+
+test('buildResponse : sonde + pourcentageExplicite parle en pourcentage', () => {
+  const params = { source: 'sonde', valeur: 22, humiditeMin: 45, taillePot: 'moyen', regime: 'mesure', pourcentageExplicite: true };
+  const verdict = computeVerdict(params);
+  const response = buildResponse({ source: params.source, valeur: params.valeur, verdict, pourcentageExplicite: true });
+  assert.equal(response, '22 pour cent. Arroser un gros verre.');
+});
+
 // --- Assemblage de la réponse (4.3 / exemples de la section 7) ---
 
 test('buildResponse : capteur, arroser', () => {

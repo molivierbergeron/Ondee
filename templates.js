@@ -10,7 +10,9 @@ function formatListeFr(items) {
 }
 
 export const templates = {
-  lecture: (source, valeur) => (source === 'sonde' ? `${valeur} sur dix.` : `${valeur} pour cent.`),
+  // surDix : true pour une lecture sonde dictée sur l'échelle 0–10 du cadran ;
+  // false pour un pourcentage (capteur wh51, ou sonde dictée explicitement en %).
+  lecture: (surDix, valeur) => (surDix ? `${valeur} sur dix.` : `${valeur} pour cent.`),
   nePasArroser: () => 'Ne pas arroser.',
   bientot: () => 'Bientôt. Revérifie dans quelques jours.',
   arroserDose: (dose) => `Arroser ${dose}.`,

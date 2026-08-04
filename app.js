@@ -337,7 +337,7 @@ async function comprendreUtterance(blob, mimeType, candidateIds) {
   return response.json();
 }
 
-function resoudrePlante(result, valeurDeSecours) {
+function resoudrePlante(result, valeurDeSecours, pourcentageDeSecours) {
   const plant = findPlant(result.plante_id);
   if (!plant) {
     speak(templates.nonReconnu());
@@ -350,6 +350,9 @@ function resoudrePlante(result, valeurDeSecours) {
   const valeur = estWh51 && plant.capteur_id
     ? sensorReadings[plant.capteur_id] ?? result.valeur ?? valeurDeSecours
     : result.valeur ?? valeurDeSecours;
+  // "sonde" dicte normalement sur l'échelle 0-10 du cadran, mais l'utilisateur
+  // peut aussi donner un pourcentage explicitement ("22%") — Gemini le signale.
+  const pourcentageExplicite = result.pourcentage ?? pourcentageDeSecours;
 
   if (typeof valeur !== 'number' || Number.isNaN(valeur)) {
     speak(estWh51 ? `${plant.nom}. ${templates.capteurIndisponible()}` : templates.nonReconnu());
@@ -362,8 +365,9 @@ function resoudrePlante(result, valeurDeSecours) {
     humiditeMin: plant.humidite_min,
     taillePot: plant.taille_pot,
     regime: plant.regime,
+    pourcentageExplicite,
   });
-  const response = buildResponse({ source: plant.source, valeur, verdict });
+  const response = buildResponse({ source: plant.source, valeur, verdict, pourcentageExplicite });
   // Le nom est annoncé en premier : sans ça, en mains libres, aucun moyen de
   // détecter que Gemini a identifié la mauvaise plante avant d'arroser.
   addLogEntry(plant.nom, response);
@@ -388,6 +392,7 @@ function handleResult(result, resolvingDisambiguation) {
   }
 
   const valeurDeSecours = resolvingDisambiguation ? pendingDisambiguation.valeur : undefined;
+  const pourcentageDeSecours = resolvingDisambiguation ? pendingDisambiguation.pourcentage : undefined;
   if (resolvingDisambiguation) {
     pendingDisambiguation = null;
   }
@@ -396,7 +401,7 @@ function handleResult(result, resolvingDisambiguation) {
     if (!resolvingDisambiguation && Array.isArray(result.ambigus) && result.ambigus.length > 0) {
       const pieces = [...new Set(result.ambigus.map((id) => findPlant(id)?.piece).filter(Boolean))];
       if (pieces.length > 0) {
-        pendingDisambiguation = { candidateIds: result.ambigus, valeur: result.valeur };
+        pendingDisambiguation = { candidateIds: result.ambigus, valeur: result.valeur, pourcentage: result.pourcentage };
         speak(templates.ambiguite(pieces));
         return;
       }
@@ -405,7 +410,7 @@ function handleResult(result, resolvingDisambiguation) {
     return;
   }
 
-  resoudrePlante(result, valeurDeSecours);
+  resoudrePlante(result, valeurDeSecours, pourcentageDeSecours);
 }
 
 async function onUtteranceComplete() {

@@ -75,6 +75,8 @@ Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol
 npm test
 ```
 
+**Écart avec le brief, ajouté après test réel :** le brief suppose qu'une plante `sonde` est toujours dictée sur l'échelle 0–10 du cadran de l'humidimètre. En pratique, l'utilisateur donne parfois directement un pourcentage à voix haute ("22%"). Gemini détecte maintenant ce cas (champ `pourcentage: true` dans sa réponse quand un "%"/"pour cent" est explicitement énoncé) et `computeVerdict`/`buildResponse` sautent la multiplication ×10 et parlent en pourcentage plutôt qu'en "X sur dix" — voir `pourcentageExplicite` dans `logic.js`. Sans ce signal explicite, le comportement 0–10 par défaut du brief reste inchangé.
+
 ## Phase 3 — LLM + proxy
 
 `worker/` contient le Worker Cloudflare (`index.js` + `wrangler.toml`) qui détient la clé Gemini côté serveur et relaie l'audio. `app.js` est câblé dessus : chaque énoncé enregistré part vers `${WORKER_URL}/comprendre`, la réponse JSON (`plante_id`/`valeur`, ambiguïté, non-reconnu, ou `répète`) passe par `logic.js` pour le verdict, puis `speak()`.

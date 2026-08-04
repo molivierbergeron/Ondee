@@ -35,9 +35,11 @@ function buildSystemPrompt(plants, candidateIds) {
 Candidats :
 ${liste}
 
+Si une valeur numérique est énoncée avec "%" ou "pour cent", ajoute "pourcentage": true.
+
 Règles de sortie, JSON strict uniquement, sans texte autour :
 - Commande "répète" : {"commande": "repete"}
-- Un des candidats correspond clairement à la réponse (pièce, détail) : {"plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "confiance": "haute"|"moyenne"}
+- Un des candidats correspond clairement à la réponse (pièce, détail) : {"plante_id": <id>, "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent, "confiance": "haute"|"moyenne"}
 - Toujours ambigu, ou aucun candidat ne correspond à la réponse : {"plante_id": null}
 
 Ne choisis jamais un candidat au hasard si la réponse ne permet pas de trancher.`;
@@ -52,6 +54,13 @@ Note sur [wh51] vs [sonde] : les plantes [wh51] ont un capteur automatique —
 l'utilisateur ne dit que le nom de la plante, sans chiffre, et c'est normal.
 Les plantes [sonde] nécessitent une valeur dictée pour être un identification complète.
 
+Pour une plante [sonde], la valeur est normalement dictée sur l'échelle 0 à
+10 du cadran de l'humidimètre (ex. "six" = 6). Mais certains utilisateurs
+donnent directement un pourcentage à voix haute (ex. "vingt-deux pour
+cent" ou "22%") — dans ce cas, ajoute "pourcentage": true dans la sortie.
+Sans "%", ni "pour cent" explicitement énoncé, ne mets pas ce champ (défaut :
+échelle 0 à 10).
+
 Attention aux noms génériques partagés par plusieurs plantes de la liste
 (ex. "Ficus" correspond à 3 plantes différentes, "Calathea" à 2, "Pothos" à
 4, "Sansevieria" à 2) : si l'énoncé ne précise pas assez pour distinguer
@@ -59,9 +68,9 @@ laquelle, c'est une ambiguïté à signaler, pas un match à deviner.
 
 Règles de sortie, JSON strict uniquement, sans texte autour :
 - Commande "répète" (ou équivalent proche, ex. "répète ça") : {"commande": "repete"}
-- Plante [sonde] identifiée sans ambiguïté (nom précis, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "confiance": "haute"|"moyenne"}
+- Plante [sonde] identifiée sans ambiguïté (nom précis, description visuelle, ou pièce) avec une valeur numérique énoncée : {"plante_id": <id>, "valeur": <nombre>, "pourcentage": true|absent, "confiance": "haute"|"moyenne"}
 - Plante [wh51] identifiée sans ambiguïté, avec ou sans valeur énoncée : {"plante_id": <id>, "confiance": "haute"|"moyenne"} (ajoute "valeur" seulement si un chiffre a été dit)
-- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé}
+- Plusieurs plantes correspondent également (nom générique partagé, ou description qui colle à plus d'une) : {"plante_id": null, "ambigus": [<id>, <id>, ...], "valeur": <nombre>|absent si non énoncé, "pourcentage": true|absent}
 - Aucune plante ne correspond, ou une plante [sonde] est nommée sans valeur : {"plante_id": null}
 
 Ne devine jamais une plante en cas de doute : préfère l'ambiguïté ou le non-reconnu à une identification incertaine.`;

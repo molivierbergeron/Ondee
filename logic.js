@@ -4,8 +4,16 @@
 
 import { templates } from './templates.js';
 
-function isOutOfRange(source, valeur) {
-  if (source === 'sonde' && valeur > 10) return true;
+// Une sonde "sonde" dicte normalement sur une échelle 0–10 (le cadran de
+// l'humidimètre), mais certains utilisateurs donnent directement un
+// pourcentage à voix haute ("vingt-deux pour cent") — dans ce cas Gemini le
+// signale via pourcentageExplicite et on ne multiplie pas par 10.
+function estPourcentage(source, pourcentageExplicite) {
+  return source !== 'sonde' || pourcentageExplicite === true;
+}
+
+function isOutOfRange(source, valeur, pourcentageExplicite) {
+  if (!estPourcentage(source, pourcentageExplicite) && valeur > 10) return true;
   if (valeur > 100) return true;
   return false;
 }
@@ -17,13 +25,13 @@ function computeDose(taillePot, ecart) {
   throw new Error(`taille_pot inconnue : ${taillePot}`);
 }
 
-// { source, valeur, humiditeMin, taillePot, regime } -> verdict
-export function computeVerdict({ source, valeur, humiditeMin, taillePot, regime }) {
-  if (isOutOfRange(source, valeur)) {
+// { source, valeur, humiditeMin, taillePot, regime, pourcentageExplicite } -> verdict
+export function computeVerdict({ source, valeur, humiditeMin, taillePot, regime, pourcentageExplicite }) {
+  if (isOutOfRange(source, valeur, pourcentageExplicite)) {
     return { type: 'hors_limite' };
   }
 
-  const lectureNorm = source === 'sonde' ? valeur * 10 : valeur;
+  const lectureNorm = estPourcentage(source, pourcentageExplicite) ? valeur : valeur * 10;
   const ecart = humiditeMin - lectureNorm;
 
   if (ecart <= 0) {
@@ -38,13 +46,13 @@ export function computeVerdict({ source, valeur, humiditeMin, taillePot, regime 
   return { type: 'arroser', lectureNorm, ecart, dose: computeDose(taillePot, ecart) };
 }
 
-// { source, valeur, verdict } -> texte à énoncer
-export function buildResponse({ source, valeur, verdict }) {
+// { source, valeur, verdict, pourcentageExplicite } -> texte à énoncer
+export function buildResponse({ source, valeur, verdict, pourcentageExplicite }) {
   if (verdict.type === 'hors_limite') {
     return templates.horsLimite();
   }
 
-  const lecture = templates.lecture(source, valeur);
+  const lecture = templates.lecture(!estPourcentage(source, pourcentageExplicite), valeur);
   switch (verdict.type) {
     case 'ne_pas_arroser':
       return `${lecture} ${templates.nePasArroser()}`;
