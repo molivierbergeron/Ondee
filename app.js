@@ -34,6 +34,10 @@ const PREARM_COOLDOWN_MS = 400;
 const SILENCE_DURATION_MS = 800;
 const MIN_UTTERANCE_MS = 200;       // ignore les pics trop courts (bruit, frottement) — assez bas pour ne pas avaler une réponse d'un mot ("bureau", "répète")
 const ENERGY_BLOCK_SAMPLES = 512;   // taille du bloc RMS calculé côté thread audio (plus petit = barre plus réactive)
+// En dessous, il n'y a pas d'audio exploitable — seulement l'en-tête du
+// conteneur, voire rien du tout. Envoyer ça coûte un aller-retour complet
+// pour un 400.
+const MIN_AUDIO_BYTES = 2000;
 
 // L'événement 'end' de speechSynthesis ne se déclenche pas de façon fiable
 // sur iOS quand un micro est actif en parallèle (bug WebKit connu). On
@@ -145,6 +149,7 @@ function unstickVad() {
   addLogEntry('VAD débloquée', `coincée ${Math.round((performance.now() - vadBlockedSince) / 1000)} s`);
   vadBlockedSince = null;
   ttsGeneration++;
+  speechSynthesis.cancel(); // une file de synthèse restée « speaking » bloque aussi la VAD
   ttsSpeaking = false;
   processing = false;
   armed = false;
@@ -410,7 +415,13 @@ function handleEnergyReading(rms) {
   // machine à états — deux pannes identiques à l'oreille, opposées à corriger.
   statusFlags.textContent = `arm${armed ? 1 : 0} rec${recording ? 1 : 0} proc${processing ? 1 : 0} tts${ttsSpeaking ? 1 : 0}`;
 
-  if (ttsSpeaking || processing) {
+  // speechSynthesis.speaking fait foi en plus de notre estimation de durée :
+  // quand l'estimation était trop courte, la VAD rouvrait pendant que la voix
+  // parlait encore, le micro captait sa propre réponse, et l'énoncé fantôme
+  // qui suivait annulait la phrase en cours (les « erreur: canceled » du
+  // journal réel). Le garde-fou anti-blocage plus bas couvre le cas inverse,
+  // où 'end' ne se déclencherait jamais.
+  if (ttsSpeaking || processing || speechSynthesis.speaking || speechSynthesis.pending) {
     if (vadBlockedSince === null) vadBlockedSince = performance.now();
     return;
   }
@@ -440,7 +451,19 @@ function handleEnergyReading(rms) {
 }
 
 function armRecorder() {
-  if (!mediaRecorder || mediaRecorder.state !== 'inactive') return;
+  if (!mediaRecorder) return;
+  // Le magnétophone n'est jamais censé être encore actif ici. S'il l'est,
+  // c'est qu'un stop() s'est perdu — on le referme au lieu de refuser
+  // d'armer en silence jusqu'à la fin de la session. C'est la deuxième voie
+  // de « micro mort » : celle-ci ne passe pas par ttsSpeaking/processing,
+  // donc unstickVad() ne la voyait pas.
+  if (mediaRecorder.state !== 'inactive') {
+    addLogEntry('Magnétophone coincé', `état ${mediaRecorder.state}, refermé`);
+    discardingRecording = true;
+    mediaRecorder.stop();
+    rearmBlockedUntil = performance.now() + PREARM_COOLDOWN_MS;
+    return;
+  }
   armed = true;
   armedAt = performance.now();
   discardingRecording = false;
@@ -526,7 +549,14 @@ function resoudrePlante(result, valeurDeSecours, pourcentageDeSecours) {
     regime: plant.regime,
     pourcentageExplicite,
   });
-  const response = buildResponse({ source: plant.source, valeur, verdict, pourcentageExplicite });
+  const response = buildResponse({
+    source: plant.source,
+    valeur,
+    verdict,
+    pourcentageExplicite,
+    humiditeMin: plant.humidite_min,
+    humiditeMax: plant.humidite_max,
+  });
   // Le nom est annoncé en premier : sans ça, en mains libres, aucun moyen de
   // détecter que Gemini a identifié la mauvaise plante avant d'arroser.
   addLogEntry(plant.nom, response);
@@ -616,14 +646,29 @@ async function onUtteranceComplete() {
     return;
   }
 
-  const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+  // Safari annonce son conteneur avec les paramètres de codec collés
+  // ("audio/mp4;codecs=mp4a.40.2"). Envoyé tel quel en mimeType à Gemini, ça
+  // ressort en 400 INVALID_ARGUMENT — l'erreur vue dans le journal réel. On
+  // ne garde que le type de base.
+  const mimeType = (mediaRecorder.mimeType || 'audio/mp4').split(';')[0].trim();
+  const blob = new Blob(recordedChunks, { type: mimeType });
+
+  // Un enregistrement armé puis refermé très vite peut n'émettre aucun
+  // 'dataavailable' : le blob part alors vide, et Gemini répond 400 plutôt
+  // que « rien reconnu ». Autant ne pas faire l'aller-retour du tout.
+  if (blob.size < MIN_AUDIO_BYTES) {
+    addLogEntry('Énoncé ignoré', `${blob.size} octets, trop court pour être envoyé`);
+    setEtat('en attente…', null);
+    return;
+  }
+
   const resolvingDisambiguation = pendingDisambiguation !== null;
   const candidateIds = resolvingDisambiguation ? pendingDisambiguation.candidateIds : null;
   processing = true;
   setEtat('traitement…', null);
 
   try {
-    const result = await comprendreUtterance(blob, mediaRecorder.mimeType, candidateIds);
+    const result = await comprendreUtterance(blob, mimeType, candidateIds);
     handleResult(result, resolvingDisambiguation);
   } catch (err) {
     addLogEntry('Erreur', err.message);

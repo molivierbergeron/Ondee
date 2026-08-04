@@ -373,6 +373,76 @@ en 300–600 ms, et l'appariement déterministe est instantané — soit environ
 ordre de grandeur sous ce qu'on mesure ici. **Ce qui était une hypothèse dans
 la recommandation ci-dessous est maintenant appuyé par des mesures.**
 
+## Phase 8 — corrections tirées du journal réel
+
+Cinq pannes distinctes lues dans une capture d'écran du journal utilisateur,
+version `v2026-08-04.14`. Toutes dans la couche audio/voix du navigateur,
+aucune dans la logique métier — c'est le constat qui a motivé le brief de
+reprise (`BRIEF-FABLE.md`).
+
+### `Gemini 400 : INVALID_ARGUMENT`
+
+Deux causes possibles, corrigées toutes les deux parce qu'elles sont
+indistinguables depuis le journal :
+
+- **Type MIME avec paramètres de codec.** Safari annonce
+  `audio/mp4;codecs=mp4a.40.2`. Relayé tel quel à Gemini comme `mimeType`, ça
+  peut ressortir en 400. Seul le type de base est envoyé désormais.
+- **Blob audio vide.** Un enregistrement armé puis refermé en moins de 700 ms
+  (cycle de pré-armement) peut n'émettre aucun `dataavailable` : le corps part
+  vide et Gemini répond 400 au lieu de « rien reconnu ». En dessous de
+  `MIN_AUDIO_BYTES`, l'énoncé n'est plus envoyé du tout — un aller-retour de
+  moins, et une entrée au journal qui le dit.
+
+### `Voix : erreur: canceled` — la boucle qui se déclenchait elle-même
+
+La fenêtre « la voix parle » était dimensionnée par une **estimation** de la
+durée de parole (`estimateSpeechDurationMs`). Quand cette estimation était trop
+courte — voix plus lente, phrase plus longue que prévu — la VAD rouvrait
+pendant que la synthèse parlait encore :
+
+1. Le micro capte la fin de la propre réponse de l'app.
+2. Cet énoncé fantôme part vers Gemini.
+3. Sa réponse appelle `speak()`, qui annule la phrase toujours en cours.
+4. → `erreur: canceled`, réponse tronquée, appel Gemini gaspillé.
+
+`speechSynthesis.speaking` et `.pending` font maintenant foi **en plus** de
+l'estimation. Le cas inverse (`end` qui ne se déclenche jamais, le bug WebKit
+qui avait motivé l'estimation) reste couvert par `unstickVad()`, qui annule
+désormais aussi la file de synthèse.
+
+### Deuxième voie de « micro mort »
+
+`armRecorder()` refusait d'armer si `mediaRecorder.state !== 'inactive'`, et
+repartait en silence. Si un `stop()` se perdait, l'état restait `recording`
+pour toujours : plus aucun armement, micro mort — **sans passer par
+`ttsSpeaking`/`processing`, donc invisible pour `unstickVad()`**. Le
+magnétophone est maintenant refermé de force, avec entrée au journal.
+
+### La plage cible est annoncée
+
+Demande explicite de l'utilisateur : *« si je dis "croton", je veux savoir
+c'est quoi le target pour le croton »*. Les données étaient déjà là, jamais
+énoncées.
+
+```
+avant :  « Calathea White Star. 57 pour cent. Ne pas arroser. »
+après :  « Calathea White Star. 57 pour cent, cible 45 à 60. Ne pas arroser. »
+```
+
+La cible est ramenée **sur l'échelle de la lecture** : le cadran de
+l'humidimètre est gradué 0–10 alors que `plants.json` stocke des pourcentages.
+Annoncer « 6 sur dix, cible 45 à 60 » mélangerait deux échelles dans la même
+phrase ; c'est « 6 sur dix, cible 4,5 à 6 ». Six tests couvrent les deux
+échelles, l'arrondi sans décimale inutile, et le repli quand la cible est
+inconnue.
+
+### Voix robotique — réglage appareil, pas code
+
+Réglages → Accessibilité → Contenu énoncé → Voix → Français → télécharger une
+voix **« Améliorée »** ou **« Premium »**. `speechSynthesis` la sélectionne
+automatiquement. Aucune ligne de code ne peut remplacer ça.
+
 ## Est-ce qu'on est sur la bonne voie ? — recommandation
 
 Question posée en ouverture de cette session. Réponse courte : **ce n'est pas

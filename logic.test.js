@@ -144,6 +144,53 @@ test('buildResponse : sonde, ne pas arroser', () => {
   assert.equal(response, '6 sur dix. Ne pas arroser.');
 });
 
+// --- Plage cible annoncée (demande explicite de l'utilisateur : « je veux
+// savoir c'est quoi le target pour le croton ») ---
+
+test('buildResponse : capteur, la cible est annoncée en pourcentage', () => {
+  const params = { source: 'wh51', valeur: 25, humiditeMin: 35, humiditeMax: 50, taillePot: 'moyen', regime: 'mesure' };
+  const verdict = computeVerdict(params);
+  const response = buildResponse({ ...params, verdict });
+  assert.equal(response, '25 pour cent, cible 35 à 50. Arroser un gros verre.');
+});
+
+// Le cadran de l'humidimètre est gradué 0–10, la cible est stockée en % :
+// l'annoncer telle quelle donnerait « 6 sur dix, cible 45 à 60 », deux
+// échelles dans la même phrase. Elle est donc ramenée sur celle de la lecture.
+test('buildResponse : sonde, la cible est ramenée sur l’échelle du cadran', () => {
+  const params = { source: 'sonde', valeur: 6, humiditeMin: 45, humiditeMax: 60, taillePot: 'moyen', regime: 'mesure' };
+  const verdict = computeVerdict(params);
+  const response = buildResponse({ ...params, verdict });
+  assert.equal(response, '6 sur dix, cible 4,5 à 6. Ne pas arroser.');
+});
+
+test('buildResponse : sonde dictée en pourcentage garde l’échelle pourcentage', () => {
+  const params = { source: 'sonde', valeur: 22, humiditeMin: 45, humiditeMax: 60, taillePot: 'moyen', regime: 'mesure', pourcentageExplicite: true };
+  const verdict = computeVerdict(params);
+  const response = buildResponse({ ...params, verdict });
+  assert.equal(response, '22 pour cent, cible 45 à 60. Arroser un gros verre.');
+});
+
+test('buildResponse : régime complet annonce la cible et le ruissellement', () => {
+  const params = { source: 'wh51', valeur: 20, humiditeMin: 35, humiditeMax: 50, taillePot: 'grand', regime: 'complet' };
+  const verdict = computeVerdict(params);
+  const response = buildResponse({ ...params, verdict });
+  assert.equal(response, "20 pour cent, cible 35 à 50. Arroser jusqu'au ruissellement, puis vider la soucoupe.");
+});
+
+test('templates.cible : pas de décimale inutile', () => {
+  assert.equal(templates.cible(true, 30, 60), 'cible 3 à 6');
+  assert.equal(templates.cible(true, 25, 45), 'cible 2,5 à 4,5');
+  assert.equal(templates.cible(false, 45, 60), 'cible 45 à 60');
+});
+
+// La cible reste facultative : buildResponse doit rester appelable sans elle.
+test('buildResponse : sans cible connue, formulation inchangée', () => {
+  const params = { source: 'wh51', valeur: 32, humiditeMin: 45, taillePot: 'moyen', regime: 'mesure' };
+  const verdict = computeVerdict(params);
+  assert.equal(buildResponse({ source: params.source, valeur: params.valeur, verdict }), '32 pour cent. Arroser un gros verre.');
+});
+
 test('buildResponse : hors limite', () => {
   const params = { source: 'sonde', valeur: 23, humiditeMin: 50, taillePot: 'moyen', regime: 'mesure' };
   const verdict = computeVerdict(params);
