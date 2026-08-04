@@ -104,17 +104,27 @@ async function handleComprendre(request, env, candidateIds) {
   });
 
   if (!geminiResponse.ok) {
-    return jsonResponse({ plante_id: null }, env);
+    const errorBody = await geminiResponse.text();
+    return jsonResponse({ plante_id: null, erreur: `Gemini ${geminiResponse.status} : ${errorBody.slice(0, 300)}` }, env);
   }
 
   const data = await geminiResponse.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const blockReason = data.promptFeedback?.blockReason;
+  const finishReason = data.candidates?.[0]?.finishReason;
+
+  if (!text) {
+    return jsonResponse({
+      plante_id: null,
+      erreur: `Pas de texte renvoyé (blockReason=${blockReason ?? 'aucun'}, finishReason=${finishReason ?? 'aucun'})`,
+    }, env);
+  }
 
   try {
     const parsed = JSON.parse(text);
     return jsonResponse(parsed, env);
   } catch {
-    return jsonResponse({ plante_id: null }, env);
+    return jsonResponse({ plante_id: null, erreur: `JSON invalide reçu : ${text.slice(0, 300)}` }, env);
   }
 }
 

@@ -350,6 +350,14 @@ function resoudrePlante(result, valeurDeSecours) {
 // bureau ?" — le tour de désambiguïsation se termine ici quoi qu'il arrive
 // (résolu ou pas), pas de relance automatique en boucle.
 function handleResult(result, resolvingDisambiguation) {
+  // Diagnostic uniquement : le Worker peut joindre "erreur" (Gemini en échec,
+  // JSON invalide, quota…) même quand plante_id est null — on ne le dit pas
+  // à voix haute (resterait "je n'ai pas reconnu"), mais on le journalise
+  // pour ne plus confondre un vrai bug avec une non-reconnaissance normale.
+  if (result.erreur) {
+    addLogEntry('Erreur Worker', result.erreur);
+  }
+
   if (result.commande === 'repete') {
     speak(lastSpokenText || templates.nonReconnu());
     return; // garde pendingDisambiguation intact : "répète" ne consomme pas le tour
