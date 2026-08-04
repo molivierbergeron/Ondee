@@ -11,3 +11,6 @@ PLANTS_URL = "https://TON-USERNAME.github.io/Ondee/plants.json"
 # Secrets — NE JAMAIS les mettre ici. Définis-les après le premier déploiement :
 #   wrangler secret put GEMINI_API_KEY
 #   wrangler secret put SHARED_TOKEN
+#   wrangler secret put ECOWITT_APPLICATION_KEY
+#   wrangler secret put ECOWITT_API_KEY
+#   wrangler secret put ECOWITT_MAC

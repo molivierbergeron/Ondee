@@ -18,4 +18,5 @@ export const templates = {
   ambiguite: (pieces) => `${formatListeFr(pieces)} ?`,
   nonReconnu: () => "Je n'ai pas reconnu. Répète.",
   horsLimite: () => 'Valeur surprenante. Confirme le chiffre.',
+  capteurIndisponible: () => 'Pas de lecture capteur pour cette plante.',
 };

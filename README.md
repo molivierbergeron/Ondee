@@ -81,22 +81,39 @@ Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol
 
 **La clé Gemini ne va jamais dans le dépôt ni dans le chat** — uniquement dans le secret Cloudflare du Worker. `SHARED_TOKEN`, lui, est volontairement visible côté client (accepté par le brief pour un produit personnel) ; c'est la clé Gemini, connue seulement du Worker, qui protège réellement l'accès à l'API.
 
-### Déploiement
+## Phase 4 — Ecowitt
 
-1. Obtenir une clé API Gemini sur [Google AI Studio](https://aistudio.google.com/apikey).
+Endpoint `GET /capteurs` ajouté au même Worker (section 6 du brief) : appelle `api.ecowitt.net/api/v3/device/real_time` avec les clés Ecowitt côté serveur, renvoie `{ readings: { soil_ch1: 32, ... } }`. `app.js` l'appelle une seule fois au démarrage de la session (l'humidité du sol évolue sur des heures, pas par énoncé) et un bouton discret « rafraîchir les capteurs » permet de le refaire en cas de doute.
+
+Pour une plante `wh51` dont le `capteur_id` est renseigné, la lecture vient de ce cache plutôt que d'un chiffre dicté — l'utilisateur n'a qu'à nommer la plante. Le prompt système envoyé à Gemini distingue déjà les deux cas (voir `buildSystemPrompt` dans `worker/index.js`).
+
+**Ne fonctionnera pour aucune des 7 plantes wh51 tant que leurs `capteur_id` restent à `null`** (voir Phase 1) — en attendant, elles retombent sur `capteurIndisponible()` si aucun chiffre n'est dicté non plus.
+
+### Forme de réponse Ecowitt non confirmée
+
+Je n'ai pas pu vérifier la forme exacte du JSON renvoyé par `real_time` (documentation officielle inaccessible en recherche depuis cette session, plusieurs pages ont renvoyé des 403). Le parsing dans `extractSoilValue()` (`worker/index.js`) suppose `data.data.soil_chN.soilmoisture.value`, avec deux chemins de repli, et ignore silencieusement un canal illisible plutôt que de faire échouer toute la lecture. **À vérifier au premier vrai appel** — si les lectures reviennent vides, c'est probablement là.
+
+## Phase 5 — Finition
+
+- PWA installable : `manifest.json` + icônes (`icon-180.png` pour iOS, `icon-192.png`/`icon-512.png` pour le manifest) — générées localement (feuille simple vert sauge, cohérente avec le style existant), pas de service worker (le brief n'en demande pas — la page a besoin du réseau de toute façon pour l'API).
+- Dernière réponse affichée en gros sous le bouton, en plus du journal détaillé.
+- Accès guidé et édition du JSON déjà documentés dans ce README (Phase 0 et Phase 1).
+
+## Déploiement du Worker
+
+1. Obtenir une clé API Gemini sur [Google AI Studio](https://aistudio.google.com/apikey), et les clés Ecowitt (`application_key`, `api_key`, `mac`) sur [ecowitt.net](https://www.ecowitt.net).
 2. Dans `worker/wrangler.toml`, remplacer `TON-USERNAME` par le nom d'utilisateur GitHub réel (deux endroits : `ALLOWED_ORIGIN` et `PLANTS_URL`).
 3. `cd worker && npm install`
 4. `npx wrangler login`
 5. `npx wrangler deploy`
-6. `npx wrangler secret put GEMINI_API_KEY` — coller la clé au prompt interactif (jamais dans un fichier, jamais dans l'historique de commandes).
-7. `npx wrangler secret put SHARED_TOKEN` — coller exactement la même valeur que `SHARED_TOKEN` dans `app.js`.
-8. Copier l'URL du Worker affichée par `wrangler deploy` dans `WORKER_URL` en tête de `app.js`, commiter, pousser, republier GitHub Pages.
+6. Coller chaque secret au prompt interactif de la commande correspondante (jamais dans un fichier, jamais dans l'historique) :
+   - `npx wrangler secret put GEMINI_API_KEY`
+   - `npx wrangler secret put SHARED_TOKEN` — exactement la même valeur que `SHARED_TOKEN` dans `app.js`.
+   - `npx wrangler secret put ECOWITT_APPLICATION_KEY`
+   - `npx wrangler secret put ECOWITT_API_KEY`
+   - `npx wrangler secret put ECOWITT_MAC`
+7. Copier l'URL du Worker affichée par `wrangler deploy` dans `WORKER_URL` en tête de `app.js`, commiter, pousser, republier GitHub Pages.
 
 ### Non testé
 
-Contrairement aux Phases 0/1/2, ce câblage n'a pas pu être testé en conditions réelles (pas d'accès à un compte Cloudflare ni à une clé Gemini dans cette session) : ni le format exact attendu par l'API Gemini (modèle `gemini-flash-latest`, `responseMimeType: application/json`), ni la latence bout-en-bout (cible < 3 s, section 9), ni la qualité réelle d'identification par le LLM. À valider comme la Phase 0 — probable itération d'ajustement une fois testé sur l'appareil.
-
-## Phases suivantes
-
-- **Phase 4 — Ecowitt** : nécessite les clés API Ecowitt (`application_key`, `api_key`, `mac`) et la confirmation des `capteur_id` laissés `null` en Phase 1.
-- **Phase 5 — Finition** : UI, PWA, README final.
+Rien depuis la Phase 2 n'a pu être testé en conditions réelles (pas d'accès à un compte Cloudflare, à une clé Gemini, ni à des clés Ecowitt dans cette session) : ni le format exact attendu par l'API Gemini (modèle `gemini-flash-latest`, `responseMimeType: application/json`), ni celui d'Ecowitt (voir Phase 4), ni la latence bout-en-bout (cible < 3 s, section 9), ni la qualité réelle d'identification par le LLM. À valider comme la Phase 0 — probable itération d'ajustement une fois testé sur l'appareil.

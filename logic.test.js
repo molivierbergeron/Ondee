@@ -139,3 +139,7 @@ test('ambiguite : trois pieces', () => {
 test('nonReconnu', () => {
   assert.equal(templates.nonReconnu(), "Je n'ai pas reconnu. Répète.");
 });
+
+test('capteurIndisponible', () => {
+  assert.equal(templates.capteurIndisponible(), 'Pas de lecture capteur pour cette plante.');
+});

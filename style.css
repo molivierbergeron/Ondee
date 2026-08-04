@@ -75,11 +75,34 @@ h1 {
   cursor: default;
 }
 
+.last-response {
+  margin-top: 28px;
+  font-size: 1.1rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .status {
   margin-top: 40px;
   text-align: left;
   border-top: 1px solid var(--line);
   padding-top: 20px;
+}
+
+.refresh-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  text-decoration: underline;
+  padding: 12px 0 0;
+  cursor: pointer;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .status-row {

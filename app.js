@@ -65,6 +65,8 @@ const statusVad = document.getElementById('status-vad');
 const energyFill = document.getElementById('energy-fill');
 const energyThresholdMarker = document.getElementById('energy-threshold-marker');
 const log = document.getElementById('log');
+const refreshBtn = document.getElementById('refresh-btn');
+const lastResponseEl = document.getElementById('last-response');
 
 energyThresholdMarker.style.left = `${ENERGY_THRESHOLD * 100}%`;
 
@@ -83,6 +85,7 @@ let currentUtterance = null; // référence forte : évite le GC prématuré qui
 let processing = false; // true pendant l'appel au Worker, pour ne pas démarrer un nouvel enregistrement par-dessus
 let lastSpokenText = null; // pour la commande "répète" (rejouée sans appel API, section 5.2)
 let plants = [];
+let sensorReadings = {}; // capteur_id -> valeur, chargé une fois au démarrage (section 6)
 
 function findPlant(id) {
   return plants.find((p) => p.id === id);
@@ -149,6 +152,8 @@ function estimateSpeechDurationMs(text) {
 
 function speak(text) {
   lastSpokenText = text;
+  lastResponseEl.textContent = text;
+  lastResponseEl.hidden = false;
   speechSynthesis.cancel(); // vide toute file bloquée d'un essai précédent
 
   const utterance = new SpeechSynthesisUtterance(text);
@@ -268,19 +273,31 @@ function handleResult(result) {
   }
 
   const plant = findPlant(result.plante_id);
-  if (!plant || typeof result.valeur !== 'number' || Number.isNaN(result.valeur)) {
+  if (!plant) {
     speak(templates.nonReconnu());
+    return;
+  }
+
+  // Pour une plante à capteur (wh51), la lecture vient de la session Ecowitt
+  // chargée au démarrage, pas de l'énoncé — l'utilisateur ne dit qu'un nom.
+  const estWh51 = plant.source === 'wh51';
+  const valeur = estWh51 && plant.capteur_id
+    ? sensorReadings[plant.capteur_id] ?? result.valeur
+    : result.valeur;
+
+  if (typeof valeur !== 'number' || Number.isNaN(valeur)) {
+    speak(estWh51 ? templates.capteurIndisponible() : templates.nonReconnu());
     return;
   }
 
   const verdict = computeVerdict({
     source: plant.source,
-    valeur: result.valeur,
+    valeur,
     humiditeMin: plant.humidite_min,
     taillePot: plant.taille_pot,
     regime: plant.regime,
   });
-  const response = buildResponse({ source: plant.source, valeur: result.valeur, verdict });
+  const response = buildResponse({ source: plant.source, valeur, verdict });
   addLogEntry(plant.nom, response);
   speak(response);
 }
@@ -313,6 +330,29 @@ async function loadPlants() {
   plants = await response.json();
 }
 
+// Un seul appel au démarrage de la session (section 6) — l'humidité du sol
+// évolue sur des heures, pas la peine de recharger à chaque énoncé. Le
+// bouton « rafraîchir » permet de le refaire manuellement en cas de doute.
+async function loadSensorReadings() {
+  try {
+    const response = await fetch(`${WORKER_URL}/capteurs`, {
+      headers: { Authorization: `Bearer ${SHARED_TOKEN}` },
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    sensorReadings = data.readings || {};
+    refreshBtn.hidden = false;
+  } catch {
+    // Pas bloquant : les plantes wh51 retomberont sur capteurIndisponible().
+  }
+}
+
+refreshBtn.addEventListener('click', async () => {
+  refreshBtn.disabled = true;
+  await loadSensorReadings();
+  refreshBtn.disabled = false;
+});
+
 // --- Démarrage (geste utilisateur unique) ---
 startBtn.addEventListener('click', async () => {
   startBtn.disabled = true;
@@ -323,6 +363,7 @@ startBtn.addEventListener('click', async () => {
 
   try {
     await loadPlants();
+    await loadSensorReadings();
     await startMic();
   } catch (err) {
     setStatus(statusMic, `échec: ${err.message}`, 'error');
