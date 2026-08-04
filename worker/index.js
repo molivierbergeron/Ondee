@@ -139,11 +139,6 @@ async function handleComprendre(request, env, candidateIds) {
       contents: [{ parts: [{ inlineData: { mimeType, data: base64Audio } }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        // Identifier une plante dans une liste à partir d'un court énoncé
-        // n'a besoin d'aucun raisonnement étendu — le "thinking" par défaut
-        // de Flash n'ajoutait que de la latence pour cette tâche.
-        thinkingConfig: { thinkingBudget: 0 },
-        maxOutputTokens: 150,
       },
     }),
   });
