@@ -41,8 +41,16 @@ h1 {
 
 .subtitle {
   color: var(--ink-soft);
-  margin: 0 0 40px;
+  margin: 0 0 8px;
   font-size: 0.95rem;
+}
+
+.version {
+  color: var(--ink-soft);
+  margin: 0 0 40px;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
 }
 
 #start-btn {

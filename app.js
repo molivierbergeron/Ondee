@@ -36,6 +36,9 @@ class VadProcessor extends AudioWorkletProcessor {
 registerProcessor('vad-processor', VadProcessor);
 `;
 
+const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content || 'inconnue';
+document.getElementById('version-tag').textContent = `v${APP_VERSION}`;
+
 const startBtn = document.getElementById('start-btn');
 const statusSection = document.getElementById('status');
 const statusWakelock = document.getElementById('status-wakelock');
@@ -58,6 +61,7 @@ let utteranceStartedAt = null;
 let ttsSpeaking = false;
 let ttsWatchdogId = null;
 let frenchVoice = null;
+let currentUtterance = null; // référence forte : évite le GC prématuré qui empêche 'end' de se déclencher (bug WebKit connu)
 
 function setStatus(el, text, kind) {
   el.textContent = text;
@@ -105,6 +109,7 @@ speechSynthesis.addEventListener('voiceschanged', pickFrenchVoice);
 
 function endTtsSpeaking() {
   ttsSpeaking = false;
+  currentUtterance = null;
   if (ttsWatchdogId !== null) {
     clearTimeout(ttsWatchdogId);
     ttsWatchdogId = null;
@@ -113,15 +118,17 @@ function endTtsSpeaking() {
 }
 
 function speakTest(text) {
+  speechSynthesis.cancel(); // vide toute file bloquée d'un essai précédent
+
   const utterance = new SpeechSynthesisUtterance(text);
   if (frenchVoice) utterance.voice = frenchVoice;
   utterance.lang = 'fr-FR';
+  currentUtterance = utterance; // sans cette référence, WebKit peut GC l'objet et ne jamais émettre 'end'
   ttsSpeaking = true;
   setStatus(statusVad, 'réponse…', null);
   utterance.addEventListener('end', endTtsSpeaking);
   utterance.addEventListener('error', endTtsSpeaking);
-  // Filet de sécurité : sur iOS, l'événement 'end' peut ne jamais se
-  // déclencher si la synthèse a été interrompue en arrière-plan.
+  // Filet de sécurité : si 'end' ne se déclenche toujours pas.
   ttsWatchdogId = setTimeout(endTtsSpeaking, TTS_WATCHDOG_MS);
   speechSynthesis.speak(utterance);
 }
