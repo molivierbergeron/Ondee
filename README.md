@@ -61,9 +61,22 @@ Tests unitaires sur toute la grille (limites d'écart, dose par taille de pot, r
 npm test
 ```
 
+## Phase 1 — Données
+
+`plants.json` structuré à partir de la page Notion « 🌿 Mes plantes — Identification & entretien » (table d'arrosage pratique, 20 plantes d'intérieur — les cèdres extérieurs en pleine terre en sont exclus, hors sujet pour une tournée mains libres en pot).
+
+Mapping direct depuis Notion : `humidite_min`/`humidite_max` = la colonne « Sol cible » (pas « Arroser si ≤ », qui est un second seuil propre à la pratique manuelle de l'utilisateur — la grille du brief a déjà sa propre zone tampon de 5 points intégrée, donc les deux ne doivent pas se cumuler). `source` = 📱→`wh51`, ✋→`sonde`, directement depuis la table « usage quotidien ».
+
+**Trois décisions prises sans confirmation, à valider :**
+
+- `capteur_id` est `null` pour les 7 plantes en `wh51` (Pothos hawaïen, Monstera, Ficus pleureur, Ficus lyre, Croton, Plante-araignée, Calathea White Star). La page Notion liste des assignations (« WH51 #1 », « WH51L »…) mais elles ne concordent pas toujours avec la table d'usage quotidien (ex. Calathea lignes roses apparaît en ✋ dans un tableau et en WH51 #2 dans l'autre) — plutôt que deviner le canal `soil_ch1`–`soil_ch8` réel, à confirmer directement dans l'app Ecowitt en Phase 4.
+- `regime` mis à `mesure` partout par défaut (aucune de ces 20 plantes n'est explicitement documentée comme ayant drainage + soucoupe dans Notion). À corriger si certains pots ont vraiment un système de drainage complet.
+- `taille_pot` dérivé du diamètre de pot en pouces avec un seuil que j'ai choisi moi-même (petit ≤ 5", moyen 6–9", grand ≥ 10"), faute de seuil donné dans le brief. Ajustable si les doses ne semblent pas justes à l'usage.
+
+`piece` simplifié à un seul mot par pièce (`Cuisine` plutôt que « Cuisine / Salle à manger ») pour matcher le style de désambiguïsation de la section 7 du brief (« Salon, chambre, ou bureau ? »).
+
 ## Phases suivantes
 
-- **Phase 1 — Données** : bloquée en attente du tableau de plantes de l'utilisateur (voir section 3 du brief). Rien à structurer sans ces données.
 - **Phase 3 — LLM + proxy** : nécessite la création du Worker Cloudflare et une clé API Gemini, à fournir par l'utilisateur.
-- **Phase 4 — Ecowitt** : nécessite les clés API Ecowitt (`application_key`, `api_key`, `mac`), à fournir par l'utilisateur.
+- **Phase 4 — Ecowitt** : nécessite les clés API Ecowitt (`application_key`, `api_key`, `mac`) et la confirmation des `capteur_id` laissés `null` en Phase 1.
 - **Phase 5 — Finition** : UI, PWA, README final.
