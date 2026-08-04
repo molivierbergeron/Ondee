@@ -56,3 +56,9 @@ jobs:
           curl -sS -w "\nHTTP %{http_code}\n" \
             -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
             https://ondee-proxy.mo-bergeron.workers.dev/capteurs
+          echo "--- POST /comprendre (silence — valide la tuyauterie Gemini, pas la reconnaissance) ---"
+          curl -sS -w "\nHTTP %{http_code}\n" \
+            -H "Authorization: Bearer ${{ secrets.SHARED_TOKEN }}" \
+            -H "Content-Type: audio/wav" \
+            --data-binary @fixtures/silence.wav \
+            https://ondee-proxy.mo-bergeron.workers.dev/comprendre
