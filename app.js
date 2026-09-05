@@ -1,5 +1,6 @@
 import { computeVerdict, buildResponse } from './logic.js';
 import { templates } from './templates.js';
+import { track } from './analytics.js';
 
 // --- Proxy Cloudflare Worker (section 5.4 du brief) ---
 // SHARED_TOKEN est volontairement visible côté client (le brief l'accepte
@@ -669,8 +670,12 @@ async function onUtteranceComplete() {
 
   try {
     const result = await comprendreUtterance(blob, mimeType, candidateIds);
+    // Ce qui a été dit ne sort jamais d'ici : on compte l'aller-retour, pas
+    // la transcription ni la plante.
+    track('ondee-utterance-send', { issue: 'ok' });
     handleResult(result, resolvingDisambiguation);
   } catch (err) {
+    track('ondee-utterance-send', { issue: 'erreur' });
     addLogEntry('Erreur', err.message);
     speak(templates.nonReconnu());
   } finally {
@@ -701,12 +706,14 @@ async function loadSensorReadings() {
 }
 
 refreshBtn.addEventListener('click', async () => {
+  track('ondee-sensors-refresh', {});
   refreshBtn.disabled = true;
   await loadSensorReadings();
   refreshBtn.disabled = false;
 });
 
 stopBtn.addEventListener('click', () => {
+  track('ondee-session-stop', {});
   stopBtn.disabled = true;
   stopSession().finally(() => {
     stopBtn.disabled = false;
@@ -718,6 +725,7 @@ stopBtn.addEventListener('click', () => {
 // énoncé reconnu reste muet, le problème est en aval ; si elle est muette
 // elle aussi, il est dans la synthèse et rien d'autre n'est à déboguer.
 testVoiceBtn.addEventListener('click', () => {
+  track('ondee-voice-test', {});
   statusSection.hidden = false;
   statusSection.open = true; // la ligne « Voix » est le résultat du test
   etatPrincipal.hidden = false;
@@ -727,6 +735,7 @@ testVoiceBtn.addEventListener('click', () => {
 
 // --- Démarrage (geste utilisateur unique) ---
 startBtn.addEventListener('click', async () => {
+  track('ondee-session-start', {});
   startBtn.disabled = true;
   statusSection.hidden = false;
   etatPrincipal.hidden = false;

@@ -68,5 +68,24 @@
   </main>
 
   <script type="module" src="app.js?v=2026-08-04.15"></script>
+
+<!-- Mesure d'audience — GoatCounter. Ouvrir la page une fois avec `?owner`
+     marque l'appareil : les visites de Marc-Olivier partent alors sous un
+     chemin préfixé et ne gonflent plus les chiffres du public. -->
+<script>
+  if (new URLSearchParams(location.search).has('owner'))
+    localStorage.setItem('gc-owner','1');
+  window.goatcounter = {
+    path: function(p) {
+      return localStorage.getItem('gc-owner') ? 'owner'+p : p;
+    }
+  };
+</script>
+<script data-goatcounter="https://mobergeron.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+<script type="module">
+  import { trackVisit } from './analytics.js';
+  trackVisit('ondee');
+</script>
 </body>
 </html>
