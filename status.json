@@ -1,0 +1,556 @@
+{
+ "schema": 4,
+ "id": "ondee",
+ "repo": "Ondee",
+ "name": "Ondée",
+ "one_liner": "Pendant la tournée d'arrosage, dit pour chaque plante la cible d'humidité, s'il faut arroser et combien.",
+ "status": "en pause",
+ "version": "v2026-08-04.14",
+ "posture": {
+  "verdict": "Pivoter ou arrêter",
+  "why": "Le calcul d'arrosage est fiable. C'est l'interaction vocale mains libres qui échoue : 5 pannes en 2 minutes. Continuer à la réparer a créé un nouveau bug à chaque essai."
+ },
+ "doing": "Rien en cours depuis le 4 août. Une décision sur la forme du produit est nécessaire.",
+ "headline": "Le besoin est clair et simple : pour chacune des 20 plantes, la cible, arroser ou non, et combien. La commande vocale a marché une fois, puis a cassé dès la deuxième plante. Le produit doit changer de forme ou s'arrêter.",
+ "resume": [
+  "Le calcul (cible, dose) est fiable et testé ; c'est la voix qui casse.",
+  "Le brief de reprise (BRIEF-FABLE.md) résume tout en 10 minutes.",
+  "Les 6 plantes avec capteur sont lues automatiquement."
+ ],
+ "links": [
+  {
+   "label": "Ouvrir Ondée",
+   "url": "https://molivierbergeron.github.io/Ondee/",
+   "kind": "app"
+  },
+  {
+   "label": "Brief de reprise",
+   "url": "https://github.com/molivierbergeron/Ondee/blob/main/BRIEF-FABLE.md",
+   "kind": "doc"
+  },
+  {
+   "label": "Code sur GitHub",
+   "url": "https://github.com/molivierbergeron/Ondee",
+   "kind": "code"
+  }
+ ],
+ "phases": [
+  {
+   "id": "idee",
+   "name": "Idée",
+   "goal": "Savoir quoi faire devant chaque plante, les mains occupées.",
+   "exit": "20 plantes décrites avec leur cible.",
+   "status": "fait",
+   "done_on": "2026-08-04"
+  },
+  {
+   "id": "poc",
+   "name": "Preuve de concept",
+   "goal": "Faire la tournée sans toucher au téléphone.",
+   "exit": "15 minutes de tournée sans panne.",
+   "status": "en cours",
+   "note": "Échec avec la voix ; une autre forme est à tester."
+  },
+  {
+   "id": "proto",
+   "name": "Prototype",
+   "goal": "Tournée complète des 20 plantes.",
+   "exit": "Une tournée réussie.",
+   "status": "à venir"
+  },
+  {
+   "id": "lancement",
+   "name": "Lancement",
+   "goal": "S'en servir à chaque arrosage.",
+   "exit": "Utilisée chaque semaine.",
+   "status": "à venir"
+  },
+  {
+   "id": "amelioration",
+   "name": "Amélioration",
+   "goal": "Plus de capteurs, moins de saisie.",
+   "exit": "—",
+   "status": "à venir"
+  },
+  {
+   "id": "maturite",
+   "name": "Maturité",
+   "goal": "—",
+   "exit": "—",
+   "status": "à venir"
+  }
+ ],
+ "objectives": [
+  {
+   "id": "O1",
+   "title": "Faire la tournée des 20 plantes sans chercher l'info",
+   "why": "Le besoin réel : arriver devant une plante et savoir tout de suite quoi faire.",
+   "benefit": "experience",
+   "measure": "Tournée complète réussie",
+   "now": "Casse dès la deuxième plante",
+   "target": "Une tournée complète",
+   "strategies": [
+    {
+     "id": "O1.S1",
+     "title": "L'app mène la tournée dans un ordre fixe",
+     "why": "Plus besoin de reconnaître le nom de la plante : l'app annonce la suivante, tu dis seulement le chiffre ou tu touches un bouton.",
+     "state": "à venir",
+     "initiatives": [
+      {
+       "id": "o-tournee",
+       "title": "Prototype : tournée guidée dans un ordre fixe",
+       "status": "bloqué",
+       "owner": "ia",
+       "benefit": "experience",
+       "phase": "poc",
+       "effort": "M",
+       "blocked_by": "dec:o-forme",
+       "package": "o-p-tournee"
+      },
+      {
+       "id": "o-cible",
+       "title": "Annoncer la plage cible (« cible 35 à 50, tu es à 57 »)",
+       "status": "à faire",
+       "owner": "ia",
+       "benefit": "experience",
+       "phase": "poc",
+       "effort": "XS",
+       "package": "o-p-tournee"
+      }
+     ]
+    },
+    {
+     "id": "O1.S2",
+     "title": "Commande vocale libre (version actuelle)",
+     "why": "Audio envoyé à Gemini : lent (3 à 6 s) et invente une plante sur un silence.",
+     "state": "terminée",
+     "initiatives": [
+      {
+       "id": "o-gemini",
+       "title": "Reconnaissance vocale par Gemini",
+       "status": "abandonné",
+       "owner": "ia",
+       "benefit": "experience",
+       "phase": "poc",
+       "result": "Marche une fois ; 5 pannes en 2 minutes le 4 août."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "O2",
+   "title": "La bonne dose pour chaque plante",
+   "why": "C'est la partie qui marche : 30 tests, aucun bug.",
+   "benefit": "precision",
+   "measure": "Verdict et dose justes",
+   "now": "Atteint",
+   "target": "Atteint",
+   "strategies": [
+    {
+     "id": "O2.S1",
+     "title": "Calcul déterministe et capteurs",
+     "why": "Pas d'IA dans le calcul : il est testable.",
+     "state": "terminée",
+     "initiatives": [
+      {
+       "id": "o-logique",
+       "title": "Calcul de la dose et du verdict",
+       "status": "fait",
+       "owner": "ia",
+       "benefit": "precision",
+       "phase": "poc",
+       "done_on": "2026-08-04"
+      },
+      {
+       "id": "o-capteurs",
+       "title": "Lecture automatique des 6 plantes à capteur",
+       "status": "fait",
+       "owner": "ia",
+       "benefit": "precision",
+       "phase": "poc",
+       "done_on": "2026-08-04"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "decisions": [
+  {
+   "id": "dec:o-forme",
+   "question": "Quelle forme pour Ondée ?",
+   "stakes": "Réparer la voix libre a échoué à chaque essai. Trois options restent.",
+   "options": [
+    "Tournée guidée : l'app annonce la plante suivante, tu confirmes",
+    "Reconnaissance vocale d'Apple dans Safari (à tester)",
+    "Arrêter le produit"
+   ],
+   "recommendation": "Tournée guidée. Elle supprime la partie qui casse (reconnaître la plante) et réutilise le calcul qui marche. Un lot d'une heure suffit pour l'essayer.",
+   "minutes": 5,
+   "unblocks": [
+    "o-tournee"
+   ]
+  }
+ ],
+ "packages": [
+  {
+   "id": "o-p-tournee",
+   "title": "Prototype de tournée guidée",
+   "outcome": "Une page qui annonce les plantes une par une dans l'ordre de la maison, dit la cible, et attend ton chiffre (voix ou bouton).",
+   "ai_minutes": 60,
+   "review_minutes": 15,
+   "prompt": "Dans le repo Ondee (lis BRIEF-FABLE.md, piste C) : construis une tournée guidée. Ordre fixe par pièce depuis plants.json ; pour chaque plante, dire « nom, pièce, cible X à Y » ; accepter un chiffre dicté ou tapé ; donner le verdict et la dose avec logic.js ; les 6 plantes à capteur sont lues automatiquement. Aucune reconnaissance du nom de plante. Garde les tests verts.",
+   "items": [
+    "o-tournee",
+    "o-cible"
+   ],
+   "when": "Après ta décision"
+  }
+ ],
+ "opportunities": [
+  {
+   "title": "Tournée guidée dans un ordre fixe",
+   "value": 3,
+   "effort": "M",
+   "context": "Maintenant",
+   "verdict": "À décider",
+   "why": "Supprime la partie qui casse, garde celle qui marche.",
+   "benefit": "experience"
+  },
+  {
+   "title": "Voix française « Premium » sur l'iPhone",
+   "value": 2,
+   "effort": "XS",
+   "context": "5 minutes dans les Réglages",
+   "verdict": "Maintenant",
+   "why": "Gain immédiat, aucun code.",
+   "benefit": "experience"
+  },
+  {
+   "title": "Reconnaissance vocale d'Apple dans Safari",
+   "value": 2,
+   "effort": "S",
+   "context": "Si la tournée guidée ne suffit pas",
+   "verdict": "Plus tard",
+   "why": "Prometteuse, mais comportement incertain sur iPhone.",
+   "benefit": "experience"
+  },
+  {
+   "title": "Service de transcription plus rapide (Whisper, Deepgram)",
+   "value": 1,
+   "effort": "M",
+   "context": "—",
+   "verdict": "Non",
+   "why": "Règle la lenteur, pas la fragilité ; ajoute un abonnement.",
+   "benefit": "experience"
+  },
+  {
+   "title": "Plus de capteurs automatiques",
+   "value": 1,
+   "effort": "M",
+   "context": "Après une tournée qui marche",
+   "verdict": "Plus tard",
+   "why": "Chaque capteur retire une saisie, mais coûte du matériel.",
+   "benefit": "precision"
+  }
+ ],
+ "next": {
+  "type": "decision",
+  "ref": "dec:o-forme",
+  "why": "Tant que la forme n'est pas choisie, tout travail risque d'être jeté."
+ },
+ "chain": [
+  {
+   "label": "20 plantes et leurs cibles",
+   "state": "fait",
+   "sub": "plants.json",
+   "note": ""
+  },
+  {
+   "label": "6 capteurs automatiques",
+   "state": "fait",
+   "sub": "lecture en 0,7 s",
+   "note": ""
+  },
+  {
+   "label": "Lecture à la sonde",
+   "state": "fait",
+   "sub": "14 plantes",
+   "note": ""
+  },
+  {
+   "label": "Verdict et dose",
+   "state": "fait",
+   "sub": "30 tests, aucun bug",
+   "note": ""
+  },
+  {
+   "label": "Tournée mains libres",
+   "state": "manquant",
+   "sub": "la voix casse à la 2e plante",
+   "note": ""
+  },
+  {
+   "label": "Tournée guidée",
+   "state": "ensuite",
+   "sub": "ordre fixe, pas de reconnaissance",
+   "note": ""
+  }
+ ],
+ "evolutions": [
+  {
+   "id": "oe-guidee",
+   "title": "Tournée guidée",
+   "pitch": "L'app annonce la plante suivante et sa cible ; tu dis le chiffre ; elle dit quoi faire.",
+   "goal": "Faire la tournée sans chercher l'info",
+   "benefit": "experience",
+   "value": 3,
+   "sessions": 2,
+   "horizon": "Maintenant",
+   "first_step": "Choisir la forme (5 min).",
+   "objective": "O1",
+   "depends": [],
+   "source": "repo",
+   "mode": "mixte",
+   "why": "La voix libre a échoué ; la tournée guidée enlève la partie qui casse.",
+   "implies": "Une décision de ta part, puis une requête à l'IA ; un essai réel dans la maison."
+  },
+  {
+   "id": "oe-capteurs",
+   "title": "Plus de capteurs, moins de saisie",
+   "pitch": "Chaque capteur ajouté retire une plante de la tournée manuelle.",
+   "goal": "Moins de gestes",
+   "benefit": "experience",
+   "value": 2,
+   "sessions": 2,
+   "horizon": "Ensuite",
+   "first_step": "Lister les plantes les plus capricieuses.",
+   "objective": null,
+   "depends": [
+    "oe-guidee"
+   ],
+   "source": "repo",
+   "mode": "toi",
+   "why": "Chaque capteur enlève une plante de la tournée.",
+   "implies": "Achat de capteurs (environ 20 $ chacun, à vérifier)."
+  },
+  {
+   "id": "oe-prevoir",
+   "title": "Prévoir quand arroser",
+   "pitch": "Avec l'historique des capteurs, l'app dit quelles plantes auront soif cette semaine : la tournée ne visite que celles-là.",
+   "goal": "Arroser seulement ce qui en a besoin",
+   "benefit": "precision",
+   "value": 2,
+   "sessions": 4,
+   "horizon": "Plus tard",
+   "first_step": "Après quelques semaines de données des capteurs.",
+   "objective": null,
+   "depends": [
+    "oe-capteurs"
+   ],
+   "source": "Claude",
+   "mode": "ia",
+   "why": "Ne visiter que les plantes qui ont soif.",
+   "implies": "Quelques semaines de données des capteurs d'abord."
+  }
+ ],
+ "plan": {
+  "version": 4,
+  "updated_at": "2026-09-28T01:00",
+  "updated_by": "Claude",
+  "priorities_validated": false,
+  "changes": [
+   {
+    "version": 3,
+    "date": "2026-09-27",
+    "summary": "Analyse produit refaite : cap, objectifs sur mesure, décisions, lots d'une heure, idées triées."
+   },
+   {
+    "version": 4,
+    "date": "2026-09-28",
+    "summary": "Chaîne de valeur et évolutions majeures en séquence (maintenant, ensuite, plus tard)."
+   }
+  ]
+ },
+ "history": [
+  {
+   "date": "2026-08-04",
+   "title": "Corriger les cinq pannes lues dans le journal réel, et annoncer la cible",
+   "pr": 3
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Brief de reprise à froid, pour un deuxième avis",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Réparer le micro qui meurt en tournée, et couper la latence récupérable",
+   "pr": 2
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Réparer le silence vocal, les noms latins et la désambiguïsation",
+   "pr": 1
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Cesser de combattre l'hallucination par le prompt, la documenter",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Transcrire avant de décider, et ne plus croire le modèle sur parole",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Empêcher Gemini de recracher les exemples du prompt sur un audio muet",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Revert thinkingConfig/maxOutputTokens : casse /comprendre en prod",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Accepter les lectures sonde dictées en pourcentage explicite",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Réduire la latence de /comprendre : cache plants.json + thinking désactivé",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Annoncer le nom de la plante + première passe de finition visuelle",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Diagnostiquer \"tout retourne non-reconnu\" au lieu de deviner",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Ajouter un bouton pour terminer la session (couper le micro)",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Corriger le tour de désambiguïsation, jamais réellement câblé",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Assigner les capteur_id réels + corriger la source de Plante-araignée",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Documenter les résultats des smoke tests réels du Worker",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Smoke test /comprendre avec un clip silencieux",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Brancher WORKER_URL + smoke test réseau réel dans le CI",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Déploiement automatisé du Worker + régime confirmé par l'utilisateur",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Réordonner le README par numéro de phase (0-5)",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 4 + Phase 5: Ecowitt, PWA, dernière réponse affichée",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 3: Worker Cloudflare + câblage du pipeline réel",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 1: structurer plants.json depuis Notion",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 2: logique de verdict déterministe + gabarits + tests",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 0: estimer la durée de parole au lieu d'attendre 'end'",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 0: barre d'énergie plus réactive",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 0: versioning visible + fix GC prématuré de la synthèse vocale",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 0: déplacer la boucle VAD hors de requestAnimationFrame",
+   "pr": null
+  },
+  {
+   "date": "2026-08-04",
+   "title": "Phase 0: page de faisabilité (Wake Lock + micro + VAD énergie)",
+   "pr": null
+  }
+ ],
+ "git": {
+  "_generated": "AUTO — généré par tools/git_facts.py (future Action). Ne pas éditer à la main.",
+  "generated_at": "2026-09-27",
+  "last_commit": {
+   "sha": "f66e55b",
+   "date": "2026-09-05",
+   "author": "molivierbergeron",
+   "subject": "Mesure d'audience GoatCounter"
+  },
+  "last_human_commit": {
+   "sha": "f66e55b",
+   "date": "2026-09-05",
+   "subject": "Mesure d'audience GoatCounter"
+  },
+  "commits_30d": 1,
+  "human_commits_30d": 1,
+  "auto_commits_30d": 0,
+  "active_days_30d": 1,
+  "human_commits_per_week_8w": [
+   32,
+   0,
+   0,
+   0,
+   1,
+   0,
+   0,
+   0
+  ],
+  "workflows": [
+   "deploy-worker.yml",
+   "tests.yml"
+  ]
+ }
+}
